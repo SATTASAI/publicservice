@@ -22,6 +22,9 @@ const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS ps_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, detail TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  // ตั้งค่าระบบ (key/value) เช่น เวลาเปิด-ปิดการบันทึก
+  `CREATE TABLE IF NOT EXISTS ps_settings (key TEXT PRIMARY KEY, value TEXT, updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  `CREATE INDEX IF NOT EXISTS idx_ps_behavior_day ON ps_behavior_records(student_id, incident_date)`,
 ];
 
 const ready = new WeakMap();

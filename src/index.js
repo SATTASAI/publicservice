@@ -5,7 +5,7 @@ import { ensureSchema } from "./lib/schema.js";
 import { applySecurityHeaders } from "./lib/auth-sessions.js";
 import { login, logout } from "./routes/auth.js";
 import { handleSso } from "./routes/sso.js";
-import { handleMe, handleRoom, handleRecords, handleStaff, handleOverview } from "./routes/behavior.js";
+import { handleMe, handleRoom, handleRecords, handleStaff, handleOverview, handleSettings } from "./routes/behavior.js";
 
 async function routeApi(request, env, url) {
   const method = request.method.toUpperCase();
@@ -23,6 +23,7 @@ async function routeApi(request, env, url) {
     case "room": return handleRoom(request, env, user, url);
     case "records": return handleRecords(request, env, user, parts, method, url);
     case "staff": return handleStaff(request, env, user, method);
+    case "settings": return handleSettings(request, env, user, method);
     default: return json({ error: "ไม่พบเส้นทาง API" }, 404);
   }
 }

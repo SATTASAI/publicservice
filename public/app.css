@@ -181,3 +181,12 @@ dialog.sheet h2 { margin: 0 0 .15rem; font-size: 1.25rem; font-weight: 800; }
 }
 @keyframes pop { from { transform: scale(.96); opacity: 0; } }
 @media print { .appbar, .nav, .fab, .search, .chips-scroll, .listhead { display: none !important; } .shell { padding: 0; } .st { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; } }
+
+/* ตัดซ้ำวันเดียวกัน / ปิดนอกเวลา */
+.st .nm small.today, .today { display: block; color: var(--warn); font-weight: 600; font-size: .78rem; }
+.hist-act .today { grid-column: 1 / -1; }
+.presets button.done small { display: block; font-size: .7rem; color: var(--warn); font-weight: 600; }
+.presets button:disabled { opacity: .55; cursor: not-allowed; }
+.info.warn { background: var(--warnsoft); color: var(--warn); font-weight: 600; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.hours { display: flex; align-items: center; gap: .4rem; } .hours input { font: inherit; padding: .35rem .5rem; border: 1.5px solid var(--line); border-radius: 10px; }
