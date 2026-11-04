@@ -22,6 +22,9 @@ const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS ps_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, detail TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  // ตั๋วเข้าระบบต่อจากระบบรายงานผลการเรียน (ใช้ได้ครั้งเดียว) — ดู ssoLogin ใน src/routes/auth.js
+  `CREATE TABLE IF NOT EXISTS ps_sso_tickets (
+    jti TEXT PRIMARY KEY, user_id INTEGER NOT NULL, used_at TEXT NOT NULL DEFAULT (datetime('now')))`,
 ];
 
 const ready = new WeakMap();

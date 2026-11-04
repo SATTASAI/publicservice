@@ -3,7 +3,7 @@
 import { json, HttpError, currentUser } from "./lib/http.js";
 import { ensureSchema } from "./lib/schema.js";
 import { applySecurityHeaders } from "./lib/auth-sessions.js";
-import { login, logout } from "./routes/auth.js";
+import { login, logout, ssoLogin } from "./routes/auth.js";
 import { handleMe, handleRoom, handleRecords, handleStaff, handleOverview } from "./routes/behavior.js";
 
 async function routeApi(request, env, url) {
@@ -15,6 +15,7 @@ async function routeApi(request, env, url) {
   }
   if (parts[1] === "auth" && parts[2] === "login" && method === "POST") return login(request, env);
   if (parts[1] === "auth" && parts[2] === "logout" && method === "POST") return logout(request, env);
+  if (parts[1] === "auth" && parts[2] === "sso" && method === "GET") return ssoLogin(request, env, url);
   const user = await currentUser(request, env);
   switch (parts[1]) {
     case "me": return handleMe(request, env, user, url);
