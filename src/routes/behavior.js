@@ -1,5 +1,5 @@
 // บันทึกคะแนนพฤติกรรม: ครูประจำชั้น (ห้องของตน) · ครูฝ่ายปกครองและผู้ดูแลระบบ/ผู้บริหาร (ทุกห้อง)
-import { json, readJson, fail, requireUser, requireAdmin, intParam, text } from "../lib/http.js";
+import { json, readJson, fail, requireUser, requireAdmin, intParam, text, GENERAL_DEPT_SQL } from "../lib/http.js";
 import { listYears, resolveYear, yearTerms, currentTerm, listRooms, roomRoster, studentName, isPrimaryGrade, compareRoom, LEFT_STATUSES, thaiToday } from "../lib/roster.js";
 import { BASE_SCORE, PASS_MIN, foldScore } from "../lib/schema.js";
 
@@ -49,7 +49,7 @@ export async function handleMe(request, env, user, url) {
   const year = await resolveYear(env, url.searchParams.get("year"));
   const terms = await yearTerms(env, year.id);
   return json({
-    user: { id: user.id, full_name: user.full_name, role: user.role, is_admin: user.is_admin, is_discipline: user.is_discipline },
+    user: { id: user.id, full_name: user.full_name, role: user.role, is_admin: user.is_admin, is_discipline: user.is_discipline, is_general: user.is_general },
     years: await listYears(env), year, terms, term: currentTerm(terms), today: thaiToday(),
     rooms: await editableRooms(env, user, year.id), base: BASE_SCORE, pass_min: PASS_MIN,
   });
@@ -66,6 +66,30 @@ export async function handleRoom(request, env, user, url) {
     return { id: r.id, number: r.number, code: r.student_code, name: studentName(r), left: LEFT_STATUSES.includes(r.enrollment_status),
       score, pass: score >= PASS_MIN, deduct_count: Number(s[r.id]?.deduct_count || 0), add_count: Number(s[r.id]?.add_count || 0) };
   }) });
+}
+
+// GET /api/overview?year&term — ภาพรวมทั้งโรงเรียน (ครูฝ่ายปกครอง/ผู้ดูแล)
+export async function handleOverview(request, env, user, url) {
+  requireUser(user);
+  if (!user.is_discipline) fail(403, "เฉพาะครูฝ่ายปกครองและผู้ดูแลระบบ");
+  const year = await resolveYear(env, url.searchParams.get("year"));
+  const term = termOf(url.searchParams.get("term"));
+  const rooms = await listRooms(env, year.id);
+  const rosters = await Promise.all(rooms.map((r) => roomRoster(env, year.id, r.grade_level, r.classroom)));
+  const all = [];
+  rooms.forEach((r, i) => { for (const st of rosters[i]) if (!LEFT_STATUSES.includes(st.enrollment_status)) all.push({ st, grade: r.grade_level, room: r.classroom }); });
+  const s = await scores(env, year.id, term, all.map((x) => x.st.id));
+  const students = all.map(({ st, grade, room }) => {
+    const score = s[st.id]?.score ?? BASE_SCORE;
+    return { id: st.id, number: st.number, code: st.student_code, name: studentName(st), grade, room, score, pass: score >= PASS_MIN,
+      deduct_count: Number(s[st.id]?.deduct_count || 0), add_count: Number(s[st.id]?.add_count || 0) };
+  });
+  const summary = rooms.map((r) => {
+    const list = students.filter((x) => x.grade === r.grade_level && x.room === r.classroom);
+    return { grade: r.grade_level, room: r.classroom, students: list.length, fails: list.filter((x) => !x.pass).length,
+      avg: list.length ? Math.round((list.reduce((a, x) => a + x.score, 0) / list.length) * 10) / 10 : null };
+  });
+  return json({ year, term, rooms: summary, students });
 }
 
 export async function handleRecords(request, env, user, parts, method, url) {
@@ -143,10 +167,10 @@ export async function handleStaff(request, env, user, method) {
   requireAdmin(user);
   if (method === "GET") {
     const { results } = await env.DB.prepare(
-      `SELECT u.id, u.full_name, u.role, r.role AS ps_role FROM users u LEFT JOIN ps_staff_roles r ON r.user_id = u.id
+      `SELECT u.id, u.full_name, u.role, r.role AS ps_role, ${GENERAL_DEPT_SQL} AS in_general FROM users u LEFT JOIN ps_staff_roles r ON r.user_id = u.id
         WHERE u.status = 'active' AND u.deleted_at IS NULL AND u.role IS NOT NULL ORDER BY u.full_name`
     ).all();
-    return json({ users: results.map((u) => ({ id: u.id, full_name: u.full_name, role: u.role, discipline: u.ps_role === "discipline" })) });
+    return json({ users: results.map((u) => ({ id: u.id, full_name: u.full_name, role: u.role, discipline: u.ps_role === "discipline", general: Number(u.in_general) === 1 })) });
   }
   if (method === "PUT") {
     const b = await readJson(request);

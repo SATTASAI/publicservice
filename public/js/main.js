@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const thDate = (iso) => iso ? new Date(String(iso).replace(" ", "T") + (iso.length > 10 ? "Z" : "T00:00:00+07:00")).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", year: "2-digit" }) : "";
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* */ } } };
 
 async function api(path, { method = "GET", body } = {}) {
   const res = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined, credentials: "same-origin" });
@@ -9,36 +10,37 @@ async function api(path, { method = "GET", body } = {}) {
   return data;
 }
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2500); }
+function closeOnBackdrop(d) { d.addEventListener("click", (e) => { if (e.target === d) d.close(); }); }
+["periodDlg", "dlg", "hist", "cxDlg"].forEach((id) => closeOnBackdrop($(id)));
 
 const PRESETS = {
   deduct: [["มาสาย", 5], ["แต่งกายไม่ถูกระเบียบ", 5], ["ไม่ทำเวรทำความสะอาด", 5], ["พูดจาไม่สุภาพ", 5], ["ไม่เข้าแถว/ไม่ร่วมกิจกรรม", 5], ["ทำลายทรัพย์สินโรงเรียน", 10], ["ทะเลาะวิวาท", 10], ["หนีเรียน", 10]],
   add: [["จิตอาสาช่วยงานโรงเรียน", 5], ["ช่วยเหลือเพื่อน/ครู", 5], ["ทำความดี เก็บของได้คืนเจ้าของ", 10], ["บำเพ็ญประโยชน์ต่อชุมชน", 10]],
 };
+const TITLES = { overview: "ภาพรวมโรงเรียน", room: "ห้องเรียน", staff: "ครูฝ่ายปกครอง", me: "บัญชี" };
 
-const S = { me: null, room: null, students: [], sel: new Set(), kind: null };
+const S = { me: null, year: null, term: 1, tab: null, room: null, students: [], sel: new Set(), ov: null, action: null, hist: null };
+const ringCls = (score) => (score < (S.me?.pass_min ?? 50) ? "low" : score < 70 ? "mid" : "");
+const ring = (score) => `<div class="ring ${ringCls(score)}" style="--p:${score}"><span>${score}</span></div>`;
+const roleLabel = (u) => u.is_admin ? "ผู้ดูแลระบบ/ผู้บริหาร" : u.is_general ? "ครูฝ่ายบริหารทั่วไป · ฝ่ายปกครอง" : u.is_discipline ? "ครูฝ่ายปกครอง" : "ครูประจำชั้น";
 
+// ---------- เริ่มต้น ----------
 async function boot() {
-  try { S.me = await api("/api/me"); } catch (e) { if (e.status === 401) return showLogin(); return showLogin(e.message); }
+  try { S.me = await api("/api/me"); } catch (e) { return showLogin(e.status === 401 ? "" : e.message); }
   $("login").hidden = true; $("app").hidden = false;
-  $("who").textContent = `${S.me.user.full_name}${S.me.user.is_discipline && !S.me.user.is_admin ? " · ฝ่ายปกครอง" : ""}`;
-  $("tabStaff").hidden = !S.me.user.is_admin;
+  S.year = S.me.year.id; S.term = S.me.term;
+  const u = S.me.user;
+  $("navOverview").hidden = !u.is_discipline;
+  $("navStaff").hidden = !u.is_admin;
   $("base").textContent = S.me.base; $("passmin").textContent = S.me.pass_min;
-  $("year").innerHTML = S.me.years.map((y) => `<option value="${y.id}" ${y.id === S.me.year.id ? "selected" : ""}>${esc(y.label || y.year_be)}</option>`).join("");
-  $("term").value = String(S.me.term);
-  fillRooms();
-  await loadRoom();
+  $("profile").innerHTML = `<div class="av">${esc((u.full_name || "?").replace(/^(นาย|นางสาว|นาง)\s*/, "").charAt(0))}</div><div><b>${esc(u.full_name)}</b><span class="muted">${roleLabel(u)}</span></div>`;
+  fillYears(); paintPeriod();
+  go(u.is_discipline ? "overview" : "room");
 }
-
-function fillRooms() {
-  const saved = localStorage.getItem("ps-room");
-  $("room").innerHTML = S.me.rooms.map((r) => { const k = `${r.grade_level}/${r.classroom}`; return `<option value="${esc(k)}" ${k === saved ? "selected" : ""}>${esc(k)} (${r.students} คน)</option>`; }).join("");
-}
-
 function showLogin(msg) {
   $("app").hidden = true; $("login").hidden = false;
   if (msg) { $("lerr").textContent = msg; $("lerr").hidden = false; }
 }
-
 $("lf").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("lgo").disabled = true; $("lerr").hidden = true;
@@ -50,123 +52,228 @@ $("lf").addEventListener("submit", async (e) => {
 });
 $("logout").onclick = async () => { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); location.reload(); };
 
-document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
-  document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x === b));
-  $("score").hidden = b.dataset.tab !== "score"; $("staff").hidden = b.dataset.tab !== "staff";
-  if (b.dataset.tab === "staff") loadStaff();
-});
+// ---------- นำทาง ----------
+document.querySelectorAll("#nav button").forEach((b) => (b.onclick = () => go(b.dataset.tab)));
+function go(tab) {
+  S.tab = tab;
+  document.querySelectorAll("#nav button").forEach((x) => x.classList.toggle("on", x.dataset.tab === tab));
+  for (const id of ["overview", "room", "staff", "me"]) $(id).hidden = id !== tab;
+  $("pageTitle").textContent = TITLES[tab];
+  clearSel();
+  window.scrollTo(0, 0);
+  if (tab === "overview") loadOverview();
+  if (tab === "room") { fillRoomChips(); loadRoom(); }
+  if (tab === "staff") loadStaff();
+  paintPeriod();
+}
 
-$("year").onchange = async () => {
-  S.me = await api(`/api/me?year=${$("year").value}`);
-  $("term").value = String(S.me.term); fillRooms(); loadRoom();
+// ---------- ปี/ภาค ----------
+function fillYears() { $("year").innerHTML = S.me.years.map((y) => `<option value="${y.id}" ${y.id === S.year ? "selected" : ""}>${esc(y.label || y.year_be)}</option>`).join(""); }
+function yearLabel() { const y = S.me.years.find((x) => x.id === S.year) || S.me.year; return y.year_be || y.label; }
+function paintPeriod() {
+  const t = `ภาค ${S.term}/${yearLabel()}`;
+  $("period").textContent = t; $("mePeriod").textContent = `ภาคเรียนที่ ${S.term} ปีการศึกษา ${yearLabel()}`;
+  $("pageSub").textContent = S.tab === "room" && S.room ? `ชั้น ${S.room.grade}/${S.room.room} · ${t}` : S.tab === "overview" ? `ป.1–ป.6 · ${t}` : "โรงเรียนบ้านป่าเด็ง";
+}
+const openPeriod = () => { fillYears(); paintSeg(); $("periodDlg").showModal(); };
+$("period").onclick = openPeriod; $("openPeriod").onclick = openPeriod;
+function paintSeg() { document.querySelectorAll("#termSeg button").forEach((b) => b.classList.toggle("on", Number(b.dataset.t) === S.term)); }
+$("termSeg").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.term = Number(b.dataset.t); paintSeg(); };
+$("periodOk").onclick = async () => {
+  const y = Number($("year").value);
+  if (y !== S.year) {
+    try { S.me = await api(`/api/me?year=${y}`); S.year = y; } catch (e) { return toast(e.message); }
+  }
+  $("periodDlg").close(); go(S.tab);
 };
-$("term").onchange = loadRoom;
-$("room").onchange = () => { localStorage.setItem("ps-room", $("room").value); loadRoom(); };
-$("q").oninput = render;
+
+// ---------- ภาพรวม ----------
+async function loadOverview() {
+  $("oHero").innerHTML = `<div class="lbl">กำลังโหลด…</div>`;
+  try { S.ov = await api(`/api/overview?year=${S.year}&term=${S.term}`); } catch (e) { $("oHero").innerHTML = `<div class="lbl">${esc(e.message)}</div>`; return; }
+  const st = S.ov.students, fails = st.filter((s) => !s.pass);
+  const avg = st.length ? (st.reduce((a, s) => a + s.score, 0) / st.length).toFixed(1) : "-";
+  $("oHero").innerHTML = `<div class="lbl">ผ่านกิจกรรมเพื่อสังคมฯ ทั้งโรงเรียน</div>
+    <div class="big">${st.length - fails.length}<small> / ${st.length} คน</small></div>
+    <div class="grid"><div><b>${fails.length}</b><span>ไม่ผ่าน</span></div><div><b>${avg}</b><span>คะแนนเฉลี่ย</span></div><div><b>${S.ov.rooms.length}</b><span>ห้องเรียน</span></div></div>`;
+  const watch = st.filter((s) => s.score < 70).sort((a, b) => a.score - b.score);
+  $("oFailCount").textContent = watch.length ? `${watch.length} คน (ต่ำกว่า 70)` : "";
+  $("oFails").innerHTML = watch.length ? watch.slice(0, 30).map((s) => card(s, { room: true, nosel: true })).join("") : `<div class="empty">🎉 ไม่มีนักเรียนที่ต้องติดตาม</div>`;
+  $("oRooms").innerHTML = S.ov.rooms.map((r) => {
+    const pct = r.avg ?? 100;
+    return `<button class="rm" data-g="${esc(r.grade)}" data-r="${esc(r.room)}"><b>${esc(r.grade)}/${esc(r.room)}</b><span class="meta">${r.students} คน · เฉลี่ย ${r.avg ?? "-"}</span>
+      <div class="bar"><i class="${ringCls(pct)}" style="width:${pct}%"></i></div>
+      <span class="f ${r.fails ? "bad" : "good"}">${r.fails ? `ไม่ผ่าน ${r.fails} คน` : "ผ่านทุกคน"}</span></button>`;
+  }).join("");
+  renderOSearch();
+}
+$("oRooms").onclick = (e) => { const b = e.target.closest(".rm"); if (!b) return; setRoom(b.dataset.g, b.dataset.r); go("room"); };
+$("oq").oninput = renderOSearch;
+function renderOSearch() {
+  const q = $("oq").value.trim();
+  $("oSearch").hidden = !q; $("oMain").hidden = !!q;
+  if (!q || !S.ov) return;
+  const hit = S.ov.students.filter((s) => s.name.includes(q) || String(s.code).includes(q)).slice(0, 40);
+  $("oResults").innerHTML = hit.length ? hit.map((s) => card(s, { room: true, nosel: true })).join("") : `<div class="empty">ไม่พบนักเรียน</div>`;
+}
+for (const id of ["oFails", "oResults"]) $(id).onclick = (e) => {
+  const c = e.target.closest(".st"); if (!c) return;
+  openHist({ id: Number(c.dataset.id), grade: c.dataset.g, room: c.dataset.r });
+};
+
+// ---------- ห้องเรียน ----------
+function setRoom(grade, room) { S.room = { grade, room }; store.set("ps-room", `${grade}/${room}`); }
+function fillRoomChips() {
+  const rooms = S.me.rooms;
+  if (!S.room || !rooms.some((r) => r.grade_level === S.room.grade && r.classroom === S.room.room)) {
+    const saved = store.get("ps-room");
+    const pick = rooms.find((r) => `${r.grade_level}/${r.classroom}` === saved) || rooms[0];
+    S.room = pick ? { grade: pick.grade_level, room: pick.classroom } : null;
+  }
+  $("roomChips").hidden = rooms.length < 2;
+  $("roomChips").innerHTML = rooms.map((r) => `<button data-g="${esc(r.grade_level)}" data-r="${esc(r.classroom)}" class="${S.room && r.grade_level === S.room.grade && r.classroom === S.room.room ? "on" : ""}">${esc(r.grade_level)}/${esc(r.classroom)}</button>`).join("");
+  $("roomChips").querySelector(".on")?.scrollIntoView({ inline: "center", block: "nearest" });
+}
+$("roomChips").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; setRoom(b.dataset.g, b.dataset.r); fillRoomChips(); clearSel(); loadRoom(); };
 
 async function loadRoom() {
-  S.sel.clear(); S.students = [];
-  const v = $("room").value;
-  if (!v) { $("list").innerHTML = ""; $("stats").innerHTML = ""; $("empty").hidden = false; $("empty").textContent = "ยังไม่มีห้องที่บันทึกได้ — ครูประจำชั้นต้องได้รับมอบหมายห้องที่ระบบรายงานผลการเรียน หรือให้ผู้ดูแลกำหนดเป็นครูฝ่ายปกครอง"; return; }
-  const [grade, room] = v.split("/");
-  S.room = { grade, room };
+  S.students = []; paintPeriod();
+  if (!S.room) {
+    $("rHero").hidden = true; $("list").innerHTML = ""; $("listInfo").textContent = "";
+    $("empty").hidden = false; $("empty").textContent = "ยังไม่มีห้องที่ท่านดูแล — ครูประจำชั้นต้องได้รับมอบหมายห้องที่ระบบรายงานผลการเรียน";
+    return;
+  }
+  $("rHero").hidden = false;
   try {
-    const d = await api(`/api/room?year=${$("year").value}&term=${$("term").value}&grade=${encodeURIComponent(grade)}&room=${encodeURIComponent(room)}`);
+    const d = await api(`/api/room?year=${S.year}&term=${S.term}&grade=${encodeURIComponent(S.room.grade)}&room=${encodeURIComponent(S.room.room)}`);
     S.students = d.students;
   } catch (e) { toast(e.message); }
   render();
 }
 
+function card(s, { room = false, nosel = false } = {}) {
+  const sel = S.sel.has(s.id);
+  return `<div class="st ${s.pass ? "" : "fail"} ${s.left ? "left" : ""} ${sel ? "sel" : ""}" data-id="${s.id}" data-g="${esc(s.grade || S.room?.grade || "")}" data-r="${esc(s.room || S.room?.room || "")}">
+    ${nosel || s.left ? "" : `<span class="chk" data-chk>${sel ? "✓" : ""}</span>`}
+    <div class="av">${s.number ?? "–"}</div>
+    <div class="nm"><b>${esc(s.name)}</b><small>${room ? `<span class="tag room">${esc(s.grade)}/${esc(s.room)}</span> ` : ""}${esc(s.code)}${s.left ? " · ย้ายออก" : ""}${s.deduct_count ? ` · ตัด ${s.deduct_count}` : ""}${s.add_count ? ` · เพิ่ม ${s.add_count}` : ""}${s.pass ? "" : ' <span class="tag no">ไม่ผ่าน</span>'}</small></div>
+    ${ring(s.score)}
+  </div>`;
+}
+
 function render() {
   const q = $("q").value.trim();
   const list = S.students.filter((s) => !q || s.name.includes(q) || String(s.code).includes(q));
-  $("empty").hidden = list.length > 0; $("empty").textContent = "ไม่พบนักเรียน";
-  const act = S.students.filter((s) => !s.left);
-  const fails = act.filter((s) => !s.pass).length;
+  const act = S.students.filter((s) => !s.left), fails = act.filter((s) => !s.pass).length;
   const avg = act.length ? (act.reduce((a, s) => a + s.score, 0) / act.length).toFixed(1) : "-";
-  $("stats").innerHTML = `<div class="stat"><span class="muted">นักเรียน</span><b>${act.length}</b></div>
-    <div class="stat"><span class="muted">ผ่าน</span><b class="good">${act.length - fails}</b></div>
-    <div class="stat"><span class="muted">ไม่ผ่าน</span><b class="bad">${fails}</b></div>
-    <div class="stat"><span class="muted">คะแนนเฉลี่ย</span><b>${avg}</b></div>`;
-  $("list").innerHTML = list.map((s) => `<div class="row ${s.pass ? "" : "fail"} ${s.left ? "left" : ""}" data-id="${s.id}">
-      <input type="checkbox" ${s.left ? "disabled" : ""} ${S.sel.has(s.id) ? "checked" : ""} aria-label="เลือก ${esc(s.name)}">
-      <span class="no">${s.number ?? ""}</span>
-      <span class="nm"><a href="#" data-h="${s.id}">${esc(s.name)}</a><small>${esc(s.code)}${s.left ? " · ย้ายออก" : ""}${s.deduct_count ? ` · ตัด ${s.deduct_count} ครั้ง` : ""}${s.add_count ? ` · เพิ่ม ${s.add_count} ครั้ง` : ""}</small>
-        <div class="meter"><i style="width:${s.score}%"></i></div></span>
-      <span class="badge ${s.pass ? "ok" : "no"}">${s.pass ? "ผ่าน" : "ไม่ผ่าน"}</span>
-      <span class="score ${s.pass ? "" : "bad"}">${s.score}</span>
-    </div>`).join("");
+  $("rHero").innerHTML = `<div class="lbl">ชั้น ${esc(S.room.grade)}/${esc(S.room.room)} · ผ่านกิจกรรมเพื่อสังคมฯ</div>
+    <div class="big">${act.length - fails}<small> / ${act.length} คน</small></div>
+    <div class="grid"><div><b>${fails}</b><span>ไม่ผ่าน</span></div><div><b>${avg}</b><span>คะแนนเฉลี่ย</span></div><div><b>${act.reduce((a, s) => a + s.deduct_count, 0)}</b><span>ครั้งที่ตัด</span></div></div>`;
+  $("empty").hidden = list.length > 0; $("empty").textContent = "ไม่พบนักเรียน";
+  $("listInfo").textContent = `${list.length} คน · แตะวงกลมเพื่อเลือกหลายคน`;
+  $("list").innerHTML = list.map((s) => card(s)).join("");
   const selectable = list.filter((s) => !s.left);
-  $("all").checked = selectable.length > 0 && selectable.every((s) => S.sel.has(s.id));
+  $("selAll").textContent = selectable.length && selectable.every((s) => S.sel.has(s.id)) ? "ไม่เลือก" : "เลือกทั้งหมด";
   updateSel();
 }
-
-$("list").addEventListener("change", (e) => {
-  if (e.target.type !== "checkbox") return;
-  const id = Number(e.target.closest(".row").dataset.id);
-  e.target.checked ? S.sel.add(id) : S.sel.delete(id); updateSel();
-});
-$("list").addEventListener("click", (e) => {
-  const a = e.target.closest("[data-h]"); if (!a) return;
-  e.preventDefault(); openHist(Number(a.dataset.h));
-});
-$("all").onchange = () => {
+$("q").oninput = render;
+$("list").onclick = (e) => {
+  const c = e.target.closest(".st"); if (!c) return;
+  const id = Number(c.dataset.id), s = S.students.find((x) => x.id === id);
+  if (!s) return;
+  if (!s.left && (e.target.closest("[data-chk]") || S.sel.size)) { S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); render(); return; }
+  openHist({ id, grade: S.room.grade, room: S.room.room });
+};
+$("selAll").onclick = () => {
   const q = $("q").value.trim();
-  for (const s of S.students) if (!s.left && (!q || s.name.includes(q) || String(s.code).includes(q))) $("all").checked ? S.sel.add(s.id) : S.sel.delete(s.id);
+  const ids = S.students.filter((s) => !s.left && (!q || s.name.includes(q) || String(s.code).includes(q))).map((s) => s.id);
+  const all = ids.length && ids.every((id) => S.sel.has(id));
+  ids.forEach((id) => (all ? S.sel.delete(id) : S.sel.add(id)));
   render();
 };
+function clearSel() { S.sel.clear(); updateSel(); }
+$("selClear").onclick = () => { S.sel.clear(); render(); };
 function updateSel() {
   const n = S.sel.size;
-  $("bDeduct").disabled = $("bAdd").disabled = !n;
-  $("selCount").textContent = n ? `เลือก ${n} คน` : "";
+  $("selBar").hidden = !n || S.tab !== "room";
+  $("selCount").textContent = `เลือก ${n} คน`;
 }
+$("bDeduct").onclick = () => openAction("deduct", { ids: [...S.sel], grade: S.room.grade, room: S.room.room, names: S.students.filter((s) => S.sel.has(s.id)).map((s) => s.name) });
+$("bAdd").onclick = () => openAction("add", { ids: [...S.sel], grade: S.room.grade, room: S.room.room, names: S.students.filter((s) => S.sel.has(s.id)).map((s) => s.name) });
 
-$("bDeduct").onclick = () => openDlg("deduct");
-$("bAdd").onclick = () => openDlg("add");
-function openDlg(kind) {
-  S.kind = kind;
-  const names = S.students.filter((s) => S.sel.has(s.id)).map((s) => s.name);
+// ---------- ตัด/เพิ่มคะแนน ----------
+function openAction(kind, target) {
+  S.action = { kind, ...target };
+  const names = target.names;
   $("dTitle").textContent = kind === "deduct" ? "ตัดคะแนนพฤติกรรม" : "เพิ่มคะแนนพฤติกรรม";
   $("dTitle").className = kind === "deduct" ? "bad" : "good";
-  $("dWho").textContent = names.length > 3 ? `${names.slice(0, 3).join(", ")} และอีก ${names.length - 3} คน` : names.join(", ");
-  $("dPresets").innerHTML = PRESETS[kind].map(([r, p]) => `<button type="button" data-r="${esc(r)}" data-p="${p}">${esc(r)} (${kind === "deduct" ? "−" : "+"}${p})</button>`).join("");
+  $("dWho").textContent = `${target.grade}/${target.room} · ` + (names.length > 3 ? `${names.slice(0, 3).join(", ")} และอีก ${names.length - 3} คน` : names.join(", "));
+  $("dPresets").innerHTML = PRESETS[kind].map(([r, p]) => `<button type="button" data-r="${esc(r)}" data-p="${p}">${esc(r)}<b class="${kind === "deduct" ? "bad" : "good"}">${kind === "deduct" ? "−" : "+"}${p}</b></button>`).join("");
   $("dReason").value = ""; $("dAmount").value = "5"; $("dDate").value = S.me.today; $("derr").hidden = true;
-  $("dOk").className = `btn ${kind === "deduct" ? "danger" : "good"}`;
+  $("dOk").className = `btn lg ${kind === "deduct" ? "danger" : "good"}`;
   $("dlg").showModal();
 }
-$("dPresets").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; $("dReason").value = b.dataset.r; $("dAmount").value = b.dataset.p; };
+$("dPresets").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  $("dPresets").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  $("dReason").value = b.dataset.r; $("dAmount").value = b.dataset.p;
+};
+document.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => {
+  const v = Math.min(100, Math.max(1, (Number($("dAmount").value) || 0) + Number(b.dataset.step)));
+  $("dAmount").value = v;
+}));
 $("df").addEventListener("submit", async (e) => {
   if (e.submitter?.value !== "ok") return;
   e.preventDefault();
+  const a = S.action;
   $("dOk").disabled = true;
   try {
-    await api("/api/records", { method: "POST", body: { year: $("year").value, term: $("term").value, grade: S.room.grade, room: S.room.room,
-      kind: S.kind, amount: Number($("dAmount").value), reason: $("dReason").value, incident_date: $("dDate").value, student_ids: [...S.sel] } });
-    $("dlg").close(); toast("บันทึกแล้ว"); await loadRoom();
+    await api("/api/records", { method: "POST", body: { year: S.year, term: S.term, grade: a.grade, room: a.room,
+      kind: a.kind, amount: Number($("dAmount").value), reason: $("dReason").value, incident_date: $("dDate").value, student_ids: a.ids } });
+    $("dlg").close(); toast(`บันทึกแล้ว ${a.ids.length} คน`);
+    S.sel.clear(); await refresh();
   } catch (ex) { $("derr").textContent = ex.message; $("derr").hidden = false; }
   $("dOk").disabled = false;
 });
+async function refresh() {
+  if (S.tab === "room") await loadRoom();
+  if (S.tab === "overview") await loadOverview();
+  if (S.hist && $("hist").open) await openHist(S.hist);
+}
 
-async function openHist(id) {
-  const qs = `year=${$("year").value}&term=${$("term").value}&grade=${encodeURIComponent(S.room.grade)}&room=${encodeURIComponent(S.room.room)}&student=${id}`;
+// ---------- ประวัติ ----------
+async function openHist(t) {
+  S.hist = t;
+  const qs = `year=${S.year}&term=${S.term}&grade=${encodeURIComponent(t.grade)}&room=${encodeURIComponent(t.room)}&student=${t.id}`;
   let d;
   try { d = await api(`/api/records?${qs}`); } catch (e) { return toast(e.message); }
-  $("hTitle").innerHTML = `${esc(d.student.name)} — <span class="${d.score < S.me.pass_min ? "bad" : "good"}">${d.score} คะแนน</span>`;
+  const pass = d.score >= S.me.pass_min;
+  $("hHead").innerHTML = `${ring(d.score)}<div><b>${esc(d.student.name)}</b><span class="muted">${esc(t.grade)}/${esc(t.room)} · เลขที่ ${d.student.number ?? "-"} · <span class="${pass ? "good" : "bad"}">${pass ? "ผ่าน" : "ไม่ผ่าน"}</span></span></div>`;
+  $("hAct").innerHTML = `<button class="btn danger" data-k="deduct">− ตัดคะแนน</button><button class="btn good" data-k="add">+ เพิ่มคะแนน</button>`;
+  $("hAct").onclick = (e) => { const b = e.target.closest("[data-k]"); if (!b) return; openAction(b.dataset.k, { ids: [t.id], grade: t.grade, room: t.room, names: [d.student.name] }); };
   $("hBody").innerHTML = d.records.length ? d.records.map((r) => `<div class="rec ${r.cancelled_at ? "cx" : ""}">
       <span class="pt ${r.points < 0 ? "bad" : "good"}">${r.points > 0 ? "+" : ""}${r.points}</span>
-      <span><span class="rs">${esc(r.reason)}</span><br><small class="muted">${thDate(r.incident_date)} · ${esc(r.created_by_name || "")}${r.cancelled_at ? ` · ยกเลิกโดย ${esc(r.cancelled_by_name || "")}: ${esc(r.cancel_reason)}` : ""}</small></span>
-      ${r.can_cancel ? `<button class="btn ghost sm" data-cx="${r.id}">ยกเลิก</button>` : "<span></span>"}
-    </div>`).join("") : `<p class="muted">ภาคเรียนนี้ยังไม่มีรายการ (${S.me.base} คะแนน)</p>`;
-  $("hBody").onclick = async (e) => {
-    const b = e.target.closest("[data-cx]"); if (!b) return;
-    const reason = prompt("เหตุผลที่ยกเลิกรายการนี้"); if (!reason) return;
-    try { await api(`/api/records/${b.dataset.cx}/cancel`, { method: "POST", body: { reason } }); toast("ยกเลิกแล้ว"); await loadRoom(); openHist(id); }
-    catch (ex) { toast(ex.message); }
-  };
+      <span class="tx"><span class="rs">${esc(r.reason)}</span><small>${thDate(r.incident_date)} · ${esc(r.created_by_name || "")}${r.cancelled_at ? ` · ยกเลิกโดย ${esc(r.cancelled_by_name || "")}: ${esc(r.cancel_reason)}` : ""}</small></span>
+      ${r.can_cancel ? `<button class="btn ghost" data-cx="${r.id}" data-what="${esc(`${r.points > 0 ? "+" : ""}${r.points} ${r.reason}`)}">ยกเลิก</button>` : ""}
+    </div>`).join("") : `<div class="empty">ภาคเรียนนี้ยังไม่มีรายการ (${S.me.base} คะแนน)</div>`;
   if (!$("hist").open) $("hist").showModal();
 }
+$("hBody").onclick = (e) => {
+  const b = e.target.closest("[data-cx]"); if (!b) return;
+  S.cancelId = b.dataset.cx; $("cxWhat").textContent = b.dataset.what; $("cxReason").value = ""; $("cxerr").hidden = true;
+  $("cxDlg").showModal();
+};
+$("cxf").addEventListener("submit", async (e) => {
+  if (e.submitter?.value !== "ok") return;
+  e.preventDefault();
+  $("cxOk").disabled = true;
+  try { await api(`/api/records/${S.cancelId}/cancel`, { method: "POST", body: { reason: $("cxReason").value } }); $("cxDlg").close(); toast("ยกเลิกแล้ว"); await refresh(); }
+  catch (ex) { $("cxerr").textContent = ex.message; $("cxerr").hidden = false; }
+  $("cxOk").disabled = false;
+});
 $("hClose").onclick = () => $("hist").close();
 
+// ---------- ครูฝ่ายปกครอง ----------
 let staff = [];
 async function loadStaff() {
   try { staff = (await api("/api/staff")).users; } catch (e) { return toast(e.message); }
@@ -174,13 +281,20 @@ async function loadStaff() {
 }
 function renderStaff() {
   const q = $("sq").value.trim();
-  $("staffList").innerHTML = staff.filter((u) => !q || u.full_name.includes(q)).map((u) => `<label class="srow"><span>${esc(u.full_name)} <small class="muted">${esc(u.role)}</small></span>
-    <input type="checkbox" data-u="${u.id}" ${u.discipline ? "checked" : ""} ${["superadmin", "executive"].includes(u.role) ? "disabled title=\"ผู้ดูแลระบบ/ผู้บริหารบันทึกได้ทุกห้องอยู่แล้ว\"" : ""}></label>`).join("");
+  const admin = (u) => ["superadmin", "executive"].includes(u.role);
+  const list = staff.filter((u) => !q || u.full_name.includes(q))
+    .sort((a, b) => (admin(b) || b.general || b.discipline) - (admin(a) || a.general || a.discipline) || a.full_name.localeCompare(b.full_name, "th"));
+  $("staffList").innerHTML = list.map((u) => {
+    const auto = admin(u) || u.general;
+    const note = admin(u) ? "ผู้ดูแลระบบ/ผู้บริหาร · ทุกห้องอยู่แล้ว" : u.general ? "ฝ่ายบริหารทั่วไป · อัตโนมัติ" : u.discipline ? "กำหนดเอง" : "ครูประจำชั้น (เฉพาะห้องของตน)";
+    return `<div class="item"><span class="who"><b>${esc(u.full_name)}</b><small>${note}</small></span>
+      <label class="switch"><input type="checkbox" data-u="${u.id}" ${auto || u.discipline ? "checked" : ""} ${auto ? "disabled" : ""} aria-label="ฝ่ายปกครอง ${esc(u.full_name)}"><i></i></label></div>`;
+  }).join("") || `<div class="item muted">ไม่พบ</div>`;
 }
 $("sq").oninput = renderStaff;
 $("staffList").addEventListener("change", async (e) => {
   const id = Number(e.target.dataset.u); if (!id) return;
-  try { await api("/api/staff", { method: "PUT", body: { user_id: id, discipline: e.target.checked } }); staff.find((u) => u.id === id).discipline = e.target.checked; toast("บันทึกแล้ว"); }
+  try { await api("/api/staff", { method: "PUT", body: { user_id: id, discipline: e.target.checked } }); staff.find((u) => u.id === id).discipline = e.target.checked; toast("บันทึกแล้ว"); renderStaff(); }
   catch (ex) { e.target.checked = !e.target.checked; toast(ex.message); }
 });
 

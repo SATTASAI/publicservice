@@ -1,0 +1,10 @@
+{
+  "name": "คะแนนพฤติกรรม โรงเรียนบ้านป่าเด็ง",
+  "short_name": "คะแนนพฤติกรรม",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f5fb",
+  "theme_color": "#4338ca",
+  "lang": "th",
+  "icons": [{ "src": "/logo.png", "sizes": "any", "type": "image/png", "purpose": "any" }]
+}
