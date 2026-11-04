@@ -3,6 +3,40 @@ import { json, readJson, fail, requireUser, requireAdmin, intParam, text, GENERA
 import { listYears, resolveYear, yearTerms, currentTerm, listRooms, roomRoster, studentName, isPrimaryGrade, compareRoom, LEFT_STATUSES, thaiToday } from "../lib/roster.js";
 import { BASE_SCORE, PASS_MIN, foldScore } from "../lib/schema.js";
 
+// ---------- เวลาเปิด-ปิดการบันทึก (เวลาราชการ จ.–ศ. ตามเวลาไทย) ----------
+const HOURS_DEFAULT = { start: "08:30", end: "16:30" };
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+async function getHours(env) {
+  const { results } = await env.DB.prepare("SELECT key, value FROM ps_settings WHERE key IN ('hours_start','hours_end')").all().catch(() => ({ results: [] }));
+  const m = Object.fromEntries(results.map((r) => [r.key, r.value]));
+  return { start: HHMM.test(m.hours_start || "") ? m.hours_start : HOURS_DEFAULT.start, end: HHMM.test(m.hours_end || "") ? m.hours_end : HOURS_DEFAULT.end };
+}
+function hoursState(h) {
+  const th = new Date(Date.now() + 7 * 3600e3);
+  const day = th.getUTCDay(), now = th.toISOString().slice(11, 16);
+  const weekday = day >= 1 && day <= 5;
+  return { ...h, open: weekday && now >= h.start && now < h.end, now, weekday };
+}
+async function requireOpen(env) {
+  const st = hoursState(await getHours(env));
+  if (!st.open) fail(403, `ระบบเปิดบันทึกเฉพาะวันจันทร์–ศุกร์ เวลา ${st.start}–${st.end} น.`);
+}
+
+// { student_id: [เรื่องที่ถูกตัดแล้วในวันที่ date] }
+async function deductedOn(env, ids, date) {
+  const out = {};
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    if (!chunk.length) continue;
+    const { results } = await env.DB.prepare(
+      `SELECT student_id, reason FROM ps_behavior_records WHERE incident_date = ? AND points < 0 AND cancelled_at IS NULL
+          AND student_id IN (${chunk.map(() => "?").join(",")})`
+    ).bind(date, ...chunk).all();
+    for (const r of results) { const a = (out[r.student_id] ||= []); if (!a.includes(r.reason)) a.push(r.reason); }
+  }
+  return out;
+}
+
 async function audit(env, user, action, detail) {
   try {
     await env.DB.prepare("INSERT INTO ps_audit (user_id, action, detail) VALUES (?, ?, ?)").bind(user?.id ?? null, action, JSON.stringify(detail ?? null)).run();
@@ -52,6 +86,7 @@ export async function handleMe(request, env, user, url) {
     user: { id: user.id, full_name: user.full_name, role: user.role, is_admin: user.is_admin, is_discipline: user.is_discipline, is_general: user.is_general },
     years: await listYears(env), year, terms, term: currentTerm(terms), today: thaiToday(),
     rooms: await editableRooms(env, user, year.id), base: BASE_SCORE, pass_min: PASS_MIN,
+    hours: hoursState(await getHours(env)),
   });
 }
 
@@ -61,10 +96,12 @@ export async function handleRoom(request, env, user, url) {
   const term = termOf(url.searchParams.get("term"));
   const { grade, room, roster } = await pickRoom(env, user, year.id, url.searchParams.get("grade"), url.searchParams.get("room"));
   const s = await scores(env, year.id, term, roster.map((r) => r.id));
+  const today = await deductedOn(env, roster.map((r) => r.id), thaiToday());
   return json({ year, term, grade, room, students: roster.map((r) => {
     const score = s[r.id]?.score ?? BASE_SCORE;
     return { id: r.id, number: r.number, code: r.student_code, name: studentName(r), left: LEFT_STATUSES.includes(r.enrollment_status),
-      score, pass: score >= PASS_MIN, deduct_count: Number(s[r.id]?.deduct_count || 0), add_count: Number(s[r.id]?.add_count || 0) };
+      score, pass: score >= PASS_MIN, deduct_count: Number(s[r.id]?.deduct_count || 0), add_count: Number(s[r.id]?.add_count || 0),
+      today_deducted: today[r.id] || [] };
   }) });
 }
 
@@ -115,6 +152,7 @@ export async function handleRecords(request, env, user, parts, method, url) {
 
   // POST /api/records — ตัด/เพิ่มคะแนน (เลือกได้หลายคนพร้อมกัน)
   if (method === "POST" && !parts[2]) {
+    await requireOpen(env);
     const b = await readJson(request);
     const year = await resolveYear(env, b.year);
     const term = termOf(b.term);
@@ -125,16 +163,29 @@ export async function handleRecords(request, env, user, parts, method, url) {
     const reason = text(b.reason, 300);
     if (!reason) fail(400, "กรุณาระบุเหตุผล");
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.incident_date || "")) ? b.incident_date : thaiToday();
-    const ids = [...new Set((Array.isArray(b.student_ids) ? b.student_ids : []).map(Number))];
+    if (date > thaiToday()) fail(400, "วันที่ต้องไม่เกินวันนี้");
+    let ids = [...new Set((Array.isArray(b.student_ids) ? b.student_ids : []).map(Number))];
     if (!ids.length) fail(400, "เลือกนักเรียนอย่างน้อย 1 คน");
     const active = new Set(roster.filter((r) => !LEFT_STATUSES.includes(r.enrollment_status)).map((r) => r.id));
     for (const id of ids) if (!active.has(id)) fail(400, "มีนักเรียนที่ไม่อยู่ในห้องนี้ หรือย้ายออกแล้ว");
     const points = b.kind === "deduct" ? -amount : amount;
+    // ตัดคะแนนเรื่องเดียวกันได้วันละครั้ง (นับรวมทุกครู) · ยกเลิกรายการแล้วตัดใหม่ได้
+    let skipped = [];
+    if (points < 0) {
+      const done = await deductedOn(env, ids, date);
+      skipped = ids.filter((id) => (done[id] || []).includes(reason));
+      if (skipped.length) {
+        const names = roster.filter((r) => skipped.includes(r.id)).map(studentName);
+        if (skipped.length === ids.length) fail(409, `ถูกตัดคะแนนเรื่อง "${reason}" ในวันนี้แล้ว: ${names.join(", ")}`);
+        ids = ids.filter((id) => !skipped.includes(id));
+        skipped = names;
+      }
+    }
     await env.DB.batch(ids.map((sid) => env.DB.prepare(
       "INSERT INTO ps_behavior_records (academic_year_id, term_number, student_id, points, reason, incident_date, created_by) VALUES (?,?,?,?,?,?,?)"
     ).bind(year.id, term, sid, points, reason, date, user.id)));
     await audit(env, user, "behavior.add", { grade, room, term, points, reason, students: ids });
-    return json({ ok: true, saved: ids.length });
+    return json({ ok: true, saved: ids.length, skipped });
   }
 
   // POST /api/records/:id/cancel — ผู้บันทึก หรือครูฝ่ายปกครอง/ผู้ดูแล ยกเลิกได้ (ต้องมีเหตุผล)
@@ -158,6 +209,25 @@ export async function handleRecords(request, env, user, parts, method, url) {
       .bind(user.id, reason, id).run();
     await audit(env, user, "behavior.cancel", { id, reason });
     return json({ ok: true });
+  }
+  fail(405, "ไม่รองรับ");
+}
+
+// GET/PUT /api/settings — เวลาเปิด-ปิดการบันทึก · แก้ได้เฉพาะครูฝ่ายปกครอง/ผู้ดูแล
+export async function handleSettings(request, env, user, method) {
+  requireUser(user);
+  if (method === "GET") return json({ hours: hoursState(await getHours(env)) });
+  if (method === "PUT") {
+    if (!user.is_discipline) fail(403, "เฉพาะครูฝ่ายปกครองและผู้ดูแลระบบ");
+    const b = await readJson(request);
+    const start = String(b.start || ""), end = String(b.end || "");
+    if (!HHMM.test(start) || !HHMM.test(end)) fail(400, "รูปแบบเวลาไม่ถูกต้อง (HH:MM)");
+    if (start >= end) fail(400, "เวลาเปิดต้องก่อนเวลาปิด");
+    await env.DB.batch([["hours_start", start], ["hours_end", end]].map(([k, v]) => env.DB.prepare(
+      "INSERT INTO ps_settings (key, value, updated_by) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = datetime('now')"
+    ).bind(k, v, user.id)));
+    await audit(env, user, "settings.hours", { start, end });
+    return json({ ok: true, hours: hoursState({ start, end }) });
   }
   fail(405, "ไม่รองรับ");
 }

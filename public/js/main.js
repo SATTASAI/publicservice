@@ -22,6 +22,19 @@ const TITLES = { overview: "ภาพรวมโรงเรียน", room: "
 const S = { me: null, year: null, term: 1, tab: null, room: null, students: [], sel: new Set(), ov: null, action: null, hist: null };
 const ringCls = (score) => (score < (S.me?.pass_min ?? 50) ? "low" : score < 70 ? "mid" : "");
 const ring = (score) => `<div class="ring ${ringCls(score)}" style="--p:${score}"><span>${score}</span></div>`;
+// เวลาเปิดบันทึก: จ.–ศ. ตามเวลาไทย (ตรวจซ้ำที่เซิร์ฟเวอร์)
+function isOpen() {
+  const h = S.me?.hours; if (!h) return true;
+  const th = new Date(Date.now() + 7 * 3600e3), d = th.getUTCDay(), now = th.toISOString().slice(11, 16);
+  return d >= 1 && d <= 5 && now >= h.start && now < h.end;
+}
+const closedMsg = () => `ปิดบันทึก · เปิดเฉพาะ จ.–ศ. ${S.me.hours.start}–${S.me.hours.end} น.`;
+function paintOpen() {
+  const open = isOpen();
+  $("closedNote").hidden = open; $("closedNote").textContent = `🔒 ${closedMsg()} (ดูข้อมูลได้ตามปกติ)`;
+  $("bDeduct").disabled = $("bAdd").disabled = !open;
+}
+setInterval(() => S.me && paintOpen(), 30000);
 const roleLabel = (u) => u.is_admin ? "ผู้ดูแลระบบ/ผู้บริหาร" : u.is_general ? "ครูฝ่ายบริหารทั่วไป · ฝ่ายปกครอง" : u.is_discipline ? "ครูฝ่ายปกครอง" : "ครูประจำชั้น";
 
 // ---------- เริ่มต้น ----------
@@ -34,7 +47,7 @@ async function boot() {
   $("navStaff").hidden = !u.is_admin;
   $("base").textContent = S.me.base; $("passmin").textContent = S.me.pass_min;
   $("profile").innerHTML = `<div class="av">${esc((u.full_name || "?").replace(/^(นาย|นางสาว|นาง)\s*/, "").charAt(0))}</div><div><b>${esc(u.full_name)}</b><span class="muted">${roleLabel(u)}</span></div>`;
-  fillYears(); paintPeriod();
+  fillYears(); paintPeriod(); paintHours();
   go(u.is_discipline ? "overview" : "room");
 }
 function showLogin(msg) {
@@ -46,7 +59,19 @@ $("lf").addEventListener("submit", async (e) => {
   $("lgo").disabled = true; $("lerr").hidden = true;
   try {
     await api("/api/auth/login", { method: "POST", body: { ...Object.fromEntries(new FormData($("lf"))), turnstile_token: window.SchoolTurnstile?.token() || "" } });
-    await boot();
+    await // ---------- เวลาเปิดบันทึก ----------
+function paintHours() {
+  const h = S.me.hours, edit = S.me.user.is_discipline;
+  $("hoursTxt").textContent = `จ.–ศ. ${h.start}–${h.end} น.`;
+  $("hoursEdit").hidden = !edit;
+  if (edit) { $("hStart").value = h.start; $("hEnd").value = h.end; }
+}
+$("hoursSave").onclick = async () => {
+  try { const d = await api("/api/settings", { method: "PUT", body: { start: $("hStart").value, end: $("hEnd").value } }); S.me.hours = d.hours; paintHours(); paintOpen(); toast("บันทึกเวลาแล้ว"); }
+  catch (e) { toast(e.message); }
+};
+
+boot();
   } catch (ex) { $("lerr").textContent = ex.message; $("lerr").hidden = false; window.SchoolTurnstile?.reset(); }
   $("lgo").disabled = false;
 });
@@ -64,7 +89,7 @@ function go(tab) {
   if (tab === "overview") loadOverview();
   if (tab === "room") { fillRoomChips(); loadRoom(); }
   if (tab === "staff") loadStaff();
-  paintPeriod();
+  paintPeriod(); paintOpen();
 }
 
 // ---------- ปี/ภาค ----------
@@ -156,7 +181,7 @@ function card(s, { room = false, nosel = false } = {}) {
   return `<div class="st ${s.pass ? "" : "fail"} ${s.left ? "left" : ""} ${sel ? "sel" : ""}" data-id="${s.id}" data-g="${esc(s.grade || S.room?.grade || "")}" data-r="${esc(s.room || S.room?.room || "")}">
     ${nosel || s.left ? "" : `<span class="chk" data-chk>${sel ? "✓" : ""}</span>`}
     <div class="av">${s.number ?? "–"}</div>
-    <div class="nm"><b>${esc(s.name)}</b><small>${room ? `<span class="tag room">${esc(s.grade)}/${esc(s.room)}</span> ` : ""}${esc(s.code)}${s.left ? " · ย้ายออก" : ""}${s.deduct_count ? ` · ตัด ${s.deduct_count}` : ""}${s.add_count ? ` · เพิ่ม ${s.add_count}` : ""}${s.pass ? "" : ' <span class="tag no">ไม่ผ่าน</span>'}</small></div>
+    <div class="nm"><b>${esc(s.name)}</b><small>${room ? `<span class="tag room">${esc(s.grade)}/${esc(s.room)}</span> ` : ""}${esc(s.code)}${s.left ? " · ย้ายออก" : ""}${s.deduct_count ? ` · ตัด ${s.deduct_count}` : ""}${s.add_count ? ` · เพิ่ม ${s.add_count}` : ""}${s.pass ? "" : ' <span class="tag no">ไม่ผ่าน</span>'}</small>${(s.today_deducted || []).length ? `<small class="today">⚠ วันนี้ถูกตัดแล้ว: ${s.today_deducted.map(esc).join(", ")}</small>` : ""}</div>
     ${ring(s.score)}
   </div>`;
 }
@@ -198,18 +223,23 @@ function updateSel() {
   $("selBar").hidden = !n || S.tab !== "room";
   $("selCount").textContent = `เลือก ${n} คน`;
 }
-$("bDeduct").onclick = () => openAction("deduct", { ids: [...S.sel], grade: S.room.grade, room: S.room.room, names: S.students.filter((s) => S.sel.has(s.id)).map((s) => s.name) });
-$("bAdd").onclick = () => openAction("add", { ids: [...S.sel], grade: S.room.grade, room: S.room.room, names: S.students.filter((s) => S.sel.has(s.id)).map((s) => s.name) });
+const selTarget = () => { const st = S.students.filter((s) => S.sel.has(s.id)); return { ids: st.map((s) => s.id), grade: S.room.grade, room: S.room.room, names: st.map((s) => s.name), today: st.map((s) => s.today_deducted || []) }; };
+$("bDeduct").onclick = () => openAction("deduct", selTarget());
+$("bAdd").onclick = () => openAction("add", selTarget());
 
 // ---------- ตัด/เพิ่มคะแนน ----------
 function openAction(kind, target) {
+  if (!isOpen()) return toast(closedMsg());
   S.action = { kind, ...target };
   const names = target.names;
   $("dTitle").textContent = kind === "deduct" ? "ตัดคะแนนพฤติกรรม" : "เพิ่มคะแนนพฤติกรรม";
   $("dTitle").className = kind === "deduct" ? "bad" : "good";
   $("dWho").textContent = `${target.grade}/${target.room} · ` + (names.length > 3 ? `${names.slice(0, 3).join(", ")} และอีก ${names.length - 3} คน` : names.join(", "));
-  $("dPresets").innerHTML = PRESETS[kind].map(([r, p]) => `<button type="button" data-r="${esc(r)}" data-p="${p}">${esc(r)}<b class="${kind === "deduct" ? "bad" : "good"}">${kind === "deduct" ? "−" : "+"}${p}</b></button>`).join("");
-  $("dReason").value = ""; $("dAmount").value = "5"; $("dDate").value = S.me.today; $("derr").hidden = true;
+  // ตัดเรื่องเดียวกันได้วันละครั้ง — บอกจำนวนคนที่ถูกตัดเรื่องนั้นวันนี้แล้ว
+  const doneN = (r) => kind === "deduct" ? (target.today || []).filter((t) => t.includes(r)).length : 0;
+  $("dPresets").innerHTML = PRESETS[kind].map(([r, p]) => { const n = doneN(r), all = n && n === target.ids.length;
+    return `<button type="button" data-r="${esc(r)}" data-p="${p}" ${all ? "disabled" : ""} class="${n ? "done" : ""}">${esc(r)}<b class="${kind === "deduct" ? "bad" : "good"}">${kind === "deduct" ? "−" : "+"}${p}</b>${n ? `<small>${all ? "ตัดแล้ววันนี้" : `ตัดแล้ว ${n} คน`}</small>` : ""}</button>`; }).join("");
+  $("dReason").value = ""; $("dAmount").value = "5"; $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
   $("dOk").className = `btn lg ${kind === "deduct" ? "danger" : "good"}`;
   $("dlg").showModal();
 }
@@ -228,9 +258,9 @@ $("df").addEventListener("submit", async (e) => {
   const a = S.action;
   $("dOk").disabled = true;
   try {
-    await api("/api/records", { method: "POST", body: { year: S.year, term: S.term, grade: a.grade, room: a.room,
+    const res = await api("/api/records", { method: "POST", body: { year: S.year, term: S.term, grade: a.grade, room: a.room,
       kind: a.kind, amount: Number($("dAmount").value), reason: $("dReason").value, incident_date: $("dDate").value, student_ids: a.ids } });
-    $("dlg").close(); toast(`บันทึกแล้ว ${a.ids.length} คน`);
+    $("dlg").close(); toast(res.skipped?.length ? `บันทึกแล้ว ${res.saved} คน · ข้าม ${res.skipped.length} คนที่ถูกตัดเรื่องนี้วันนี้แล้ว` : `บันทึกแล้ว ${res.saved} คน`);
     S.sel.clear(); await refresh();
   } catch (ex) { $("derr").textContent = ex.message; $("derr").hidden = false; }
   $("dOk").disabled = false;
@@ -249,8 +279,10 @@ async function openHist(t) {
   try { d = await api(`/api/records?${qs}`); } catch (e) { return toast(e.message); }
   const pass = d.score >= S.me.pass_min;
   $("hHead").innerHTML = `${ring(d.score)}<div><b>${esc(d.student.name)}</b><span class="muted">${esc(t.grade)}/${esc(t.room)} · เลขที่ ${d.student.number ?? "-"} · <span class="${pass ? "good" : "bad"}">${pass ? "ผ่าน" : "ไม่ผ่าน"}</span></span></div>`;
-  $("hAct").innerHTML = `<button class="btn danger" data-k="deduct">− ตัดคะแนน</button><button class="btn good" data-k="add">+ เพิ่มคะแนน</button>`;
-  $("hAct").onclick = (e) => { const b = e.target.closest("[data-k]"); if (!b) return; openAction(b.dataset.k, { ids: [t.id], grade: t.grade, room: t.room, names: [d.student.name] }); };
+  const today = [...new Set(d.records.filter((r) => !r.cancelled_at && r.points < 0 && r.incident_date === S.me.today).map((r) => r.reason))];
+  const dis = isOpen() ? "" : "disabled";
+  $("hAct").innerHTML = `${today.length ? `<div class="today">⚠ วันนี้ถูกตัดแล้ว: ${today.map(esc).join(", ")}</div>` : ""}${dis ? `<div class="today">🔒 ${closedMsg()}</div>` : ""}<button class="btn danger" data-k="deduct" ${dis}>− ตัดคะแนน</button><button class="btn good" data-k="add" ${dis}>+ เพิ่มคะแนน</button>`;
+  $("hAct").onclick = (e) => { const b = e.target.closest("[data-k]"); if (!b) return; openAction(b.dataset.k, { ids: [t.id], grade: t.grade, room: t.room, names: [d.student.name], today: [today] }); };
   $("hBody").innerHTML = d.records.length ? d.records.map((r) => `<div class="rec ${r.cancelled_at ? "cx" : ""}">
       <span class="pt ${r.points < 0 ? "bad" : "good"}">${r.points > 0 ? "+" : ""}${r.points}</span>
       <span class="tx"><span class="rs">${esc(r.reason)}</span><small>${thDate(r.incident_date)} · ${esc(r.created_by_name || "")}${r.cancelled_at ? ` · ยกเลิกโดย ${esc(r.cancelled_by_name || "")}: ${esc(r.cancel_reason)}` : ""}</small></span>
