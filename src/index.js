@@ -4,6 +4,7 @@ import { json, HttpError, currentUser } from "./lib/http.js";
 import { ensureSchema } from "./lib/schema.js";
 import { applySecurityHeaders } from "./lib/auth-sessions.js";
 import { login, logout } from "./routes/auth.js";
+import { handleSso } from "./routes/sso.js";
 import { handleMe, handleRoom, handleRecords, handleStaff, handleOverview } from "./routes/behavior.js";
 
 async function routeApi(request, env, url) {
@@ -29,6 +30,7 @@ async function routeApi(request, env, url) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/sso" && request.method === "GET") return handleSso(request, env, url);
     if (!url.pathname.startsWith("/api/")) return applySecurityHeaders(await env.ASSETS.fetch(request));
     if (url.pathname === "/api/health") return json({ ok: !!env.JWT_SECRET && !!env.DB, jwt_secret_set: !!env.JWT_SECRET, database_bound: !!env.DB });
     try {

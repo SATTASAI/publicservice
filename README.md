@@ -7,6 +7,7 @@
 - ต่ำกว่า 50 คะแนน → กิจกรรมเพื่อสังคมฯ ภาคนั้น "มผ" (ช่องจุดประสงค์ `act_social_o1/o2`) — students-report คำนวณสดจาก `ps_behavior_records` ใน `assessmentsFor` (ไม่เขียนลง gr_assessments) ผลทั้งปีไม่ผ่านถ้าไม่ผ่านภาคใดภาคหนึ่ง
 - สิทธิ์: ครูประจำชั้น (gr_homerooms ของระบบรายงานผลฯ) = เห็น/บันทึกเฉพาะห้องของตน · ครูฝ่ายปกครอง = ทุกห้อง + หน้าภาพรวมทั้งโรงเรียน (`/api/overview`)
 - ครูฝ่ายปกครอง = ครูฝ่ายบริหารทั่วไปทุกคนอัตโนมัติ (`personnel_records.departments` มี `general`, status active, ยังปฏิบัติงาน) + ที่ superadmin/executive กำหนดเพิ่มใน ps_staff_roles + superadmin/executive
+- เข้าจาก system เมนู ฝ่ายทั่วไป › รายงานพฤติกรรม ได้โดยไม่ต้องล็อกอินซ้ำ: system `/api/publicservice-sso` ออกรหัสใช้ครั้งเดียว 60 วินาที (`publicservice_sso_codes`) → `/sso?code=` ที่นี่แลกเป็น session
 - หน้าเว็บเป็นแอปมือถือ (แถบนำทางล่าง, bottom sheet, ติดตั้งเป็น PWA ได้ผ่าน manifest.webmanifest) จอกว้างเปลี่ยนเป็นแถบนำทางซ้าย
 - ยกเลิกรายการต้องมีเหตุผล (ผู้บันทึกเอง หรือฝ่ายปกครอง/ผู้ดูแล) รายการไม่ถูกลบ ประวัติอยู่ใน ps_audit
 
