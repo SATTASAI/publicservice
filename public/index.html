@@ -2,85 +2,149 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4338ca">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="คะแนนพฤติกรรม">
 <title>คะแนนพฤติกรรม — โรงเรียนบ้านป่าเด็ง</title>
 <link rel="icon" href="/logo.png">
+<link rel="apple-touch-icon" href="/logo.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
 <main id="login" class="auth" hidden>
-  <div class="card auth-card">
+  <div class="auth-hero">
     <img src="/logo.png" alt="ตราโรงเรียนบ้านป่าเด็ง">
-    <h1>ระบบคะแนนพฤติกรรม</h1>
-    <p class="muted">กิจกรรมเพื่อสังคมและสาธารณประโยชน์ · ใช้อีเมลและรหัสผ่านเดียวกับระบบบริหารโรงเรียน</p>
-    <form id="lf">
-      <div class="err" id="lerr" hidden></div>
-      <label class="field">อีเมล<input type="email" name="email" required autocomplete="email"></label>
-      <label class="field">รหัสผ่าน<input type="password" name="password" required autocomplete="current-password"></label>
-      <div data-turnstile></div>
-      <button class="btn primary" id="lgo">เข้าสู่ระบบ</button>
-    </form>
+    <h1>คะแนนพฤติกรรม</h1>
+    <p>กิจกรรมเพื่อสังคมและสาธารณประโยชน์<br>โรงเรียนบ้านป่าเด็ง</p>
   </div>
+  <form id="lf" class="auth-card">
+    <h2>เข้าสู่ระบบ</h2>
+    <p class="muted">ใช้อีเมลและรหัสผ่านเดียวกับระบบบริหารโรงเรียน</p>
+    <div class="err" id="lerr" hidden></div>
+    <label class="field">อีเมล<input type="email" name="email" required autocomplete="email"></label>
+    <label class="field">รหัสผ่าน<input type="password" name="password" required autocomplete="current-password"></label>
+    <div data-turnstile></div>
+    <button class="btn primary block lg" id="lgo">เข้าสู่ระบบ</button>
+  </form>
 </main>
 
-<div id="app" hidden>
-  <header class="top">
+<div id="app" class="shell" hidden>
+  <header class="appbar">
     <img src="/logo.png" alt="">
-    <div class="ttl"><b>คะแนนพฤติกรรมนักเรียน</b><small>กิจกรรมเพื่อสังคมและสาธารณประโยชน์ (ปพ.6)</small></div>
-    <span class="who" id="who"></span>
-    <button class="btn ghost sm" id="logout">ออกจากระบบ</button>
+    <div class="ttl"><b id="pageTitle">ห้องเรียน</b><small id="pageSub"></small></div>
+    <button class="period" id="period" aria-label="เปลี่ยนปีการศึกษา/ภาคเรียน"></button>
   </header>
-  <nav class="tabs" id="tabs">
-    <button data-tab="score" class="on">บันทึกคะแนน</button>
-    <button data-tab="staff" id="tabStaff" hidden>ครูฝ่ายปกครอง</button>
+
+  <nav class="nav" id="nav">
+    <button data-tab="overview" id="navOverview" hidden><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3zm0 8h8v-6H3zm10 0h8V11h-8zm0-18v6h8V3z"/></svg><span>ภาพรวม</span></button>
+    <button data-tab="room"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3m-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3m0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13m8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5"/></svg><span>ห้องเรียน</span></button>
+    <button data-tab="staff" id="navStaff" hidden><svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm-2 16-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9z"/></svg><span>ฝ่ายปกครอง</span></button>
+    <button data-tab="me"><svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4m0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4"/></svg><span>บัญชี</span></button>
   </nav>
 
-  <section id="score" class="wrap">
-    <div class="bar">
-      <label>ปีการศึกษา <select id="year"></select></label>
-      <label>ภาคเรียน <select id="term"><option value="1">1</option><option value="2">2</option></select></label>
-      <label>ห้อง <select id="room"></select></label>
-      <input id="q" type="search" placeholder="ค้นหาชื่อ/เลขประจำตัว">
-    </div>
-    <p class="note">เริ่มต้นภาคละ <b id="base">100</b> คะแนน · ต่ำกว่า <b id="passmin">50</b> คะแนน = กิจกรรมเพื่อสังคมและสาธารณประโยชน์ <b class="bad">ไม่ผ่าน</b> ในภาคเรียนนั้น (ส่งผลไป ปพ.6 อัตโนมัติ)</p>
-    <div class="stats" id="stats"></div>
-    <div class="actions">
-      <label class="chk"><input type="checkbox" id="all"> เลือกทั้งหมด</label>
-      <button class="btn danger" id="bDeduct" disabled>ตัดคะแนน</button>
-      <button class="btn good" id="bAdd" disabled>เพิ่มคะแนน</button>
-      <span class="muted" id="selCount"></span>
-    </div>
-    <div class="empty" id="empty" hidden></div>
-    <div class="list" id="list"></div>
-  </section>
+  <main class="content">
+    <!-- ภาพรวมทั้งโรงเรียน (ฝ่ายปกครอง) -->
+    <section id="overview" class="page" hidden>
+      <div class="hero" id="oHero"></div>
+      <div class="search"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"/></svg><input id="oq" type="search" placeholder="ค้นหานักเรียนทั้งโรงเรียน"></div>
+      <div id="oSearch" hidden><h3 class="sec">ผลการค้นหา</h3><div class="cards" id="oResults"></div></div>
+      <div id="oMain">
+        <h3 class="sec">ต้องติดตาม <small id="oFailCount"></small></h3>
+        <div class="cards" id="oFails"></div>
+        <h3 class="sec">รายห้อง</h3>
+        <div class="rooms" id="oRooms"></div>
+      </div>
+    </section>
 
-  <section id="staff" class="wrap" hidden>
-    <p class="note">ครูฝ่ายปกครองบันทึกคะแนนได้ทุกห้อง · ครูประจำชั้นบันทึกได้เฉพาะห้องของตน (กำหนดครูประจำชั้นที่ระบบรายงานผลการเรียน)</p>
-    <input id="sq" type="search" placeholder="ค้นหาชื่อครู">
-    <div class="list" id="staffList"></div>
-  </section>
+    <!-- ห้องเรียน -->
+    <section id="room" class="page" hidden>
+      <div class="chips-scroll" id="roomChips"></div>
+      <div class="hero" id="rHero"></div>
+      <div class="search"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"/></svg><input id="q" type="search" placeholder="ค้นหาชื่อ/เลขประจำตัว"></div>
+      <div class="listhead"><span class="muted" id="listInfo"></span><button class="link" id="selAll">เลือกทั้งหมด</button></div>
+      <div class="empty" id="empty" hidden></div>
+      <div class="cards" id="list"></div>
+    </section>
+
+    <!-- ครูฝ่ายปกครอง (ผู้ดูแล) -->
+    <section id="staff" class="page" hidden>
+      <div class="info">ครูฝ่ายบริหารทั่วไปเป็นครูฝ่ายปกครองอัตโนมัติ (ตามข้อมูลบุคลากรในระบบบริหารโรงเรียน) · กำหนดครูท่านอื่นเพิ่มได้ที่นี่ · ครูประจำชั้นเห็นเฉพาะห้องของตน</div>
+      <div class="search"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"/></svg><input id="sq" type="search" placeholder="ค้นหาชื่อครู"></div>
+      <div class="group" id="staffList"></div>
+    </section>
+
+    <!-- บัญชี -->
+    <section id="me" class="page" hidden>
+      <div class="profile" id="profile"></div>
+      <div class="group">
+        <div class="item"><span>เกณฑ์</span><span class="muted">เริ่มภาคละ <b id="base">100</b> · ต่ำกว่า <b id="passmin">50</b> = ไม่ผ่าน</span></div>
+        <div class="item"><span>ส่งผลไป</span><span class="muted">ปพ.6 กิจกรรมเพื่อสังคมฯ อัตโนมัติ</span></div>
+        <button class="item" id="openPeriod"><span>ปีการศึกษา / ภาคเรียน</span><span class="muted" id="mePeriod"></span></button>
+      </div>
+      <button class="btn danger-soft block lg" id="logout">ออกจากระบบ</button>
+    </section>
+  </main>
+
+  <div class="fab" id="selBar" hidden>
+    <button class="x" id="selClear" aria-label="ยกเลิกการเลือก">✕</button>
+    <span id="selCount"></span>
+    <button class="btn danger" id="bDeduct">− ตัดคะแนน</button>
+    <button class="btn good" id="bAdd">+ เพิ่ม</button>
+  </div>
 </div>
 
-<dialog id="dlg">
+<!-- เลือกปี/ภาค -->
+<dialog id="periodDlg" class="sheet">
+  <div class="grab"></div>
+  <h2>ปีการศึกษา / ภาคเรียน</h2>
+  <label class="field">ปีการศึกษา<select id="year"></select></label>
+  <div class="field">ภาคเรียน<div class="seg" id="termSeg"><button data-t="1">ภาคเรียนที่ 1</button><button data-t="2">ภาคเรียนที่ 2</button></div></div>
+  <button class="btn primary block lg" id="periodOk">เสร็จ</button>
+</dialog>
+
+<!-- ตัด/เพิ่มคะแนน -->
+<dialog id="dlg" class="sheet">
   <form method="dialog" id="df">
+    <div class="grab"></div>
     <h2 id="dTitle"></h2>
     <p class="muted" id="dWho"></p>
-    <div class="chips" id="dPresets"></div>
-    <label class="field">เหตุผล<input name="reason" id="dReason" required maxlength="300"></label>
-    <div class="row2">
-      <label class="field">จำนวนคะแนน<input name="amount" id="dAmount" type="number" min="1" max="100" required inputmode="numeric"></label>
-      <label class="field">วันที่<input name="incident_date" id="dDate" type="date"></label>
+    <div class="presets" id="dPresets"></div>
+    <label class="field">เหตุผล<input name="reason" id="dReason" required maxlength="300" placeholder="เลือกด้านบน หรือพิมพ์เอง"></label>
+    <div class="field">จำนวนคะแนน
+      <div class="stepper"><button type="button" data-step="-1">−</button><input name="amount" id="dAmount" type="number" min="1" max="100" required inputmode="numeric"><button type="button" data-step="1">+</button></div>
     </div>
+    <label class="field">วันที่<input name="incident_date" id="dDate" type="date"></label>
     <div class="err" id="derr" hidden></div>
-    <div class="dlg-act"><button value="cancel" formnovalidate class="btn ghost">ยกเลิก</button><button value="ok" class="btn primary" id="dOk">บันทึก</button></div>
+    <div class="sheet-act"><button value="cancel" formnovalidate class="btn ghost lg">ยกเลิก</button><button value="ok" class="btn primary lg" id="dOk">บันทึก</button></div>
   </form>
 </dialog>
 
-<dialog id="hist">
-  <div class="hist-head"><h2 id="hTitle"></h2><button class="btn ghost sm" id="hClose">ปิด</button></div>
+<!-- ประวัตินักเรียน -->
+<dialog id="hist" class="sheet tall">
+  <div class="grab"></div>
+  <div class="hist-head" id="hHead"></div>
+  <div class="hist-act" id="hAct"></div>
+  <h3 class="sec">ประวัติภาคเรียนนี้</h3>
   <div id="hBody"></div>
+  <button class="btn ghost block lg" id="hClose">ปิด</button>
+</dialog>
+
+<!-- ยกเลิกรายการ -->
+<dialog id="cxDlg" class="sheet">
+  <form method="dialog" id="cxf">
+    <div class="grab"></div>
+    <h2>ยกเลิกรายการ</h2>
+    <p class="muted" id="cxWhat"></p>
+    <label class="field">เหตุผลที่ยกเลิก<input id="cxReason" required maxlength="300"></label>
+    <div class="err" id="cxerr" hidden></div>
+    <div class="sheet-act"><button value="cancel" formnovalidate class="btn ghost lg">ปิด</button><button value="ok" class="btn danger lg" id="cxOk">ยืนยันยกเลิก</button></div>
+  </form>
 </dialog>
 
 <div class="toast" id="toast" hidden></div>

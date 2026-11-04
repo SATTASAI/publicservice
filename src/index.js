@@ -4,7 +4,7 @@ import { json, HttpError, currentUser } from "./lib/http.js";
 import { ensureSchema } from "./lib/schema.js";
 import { applySecurityHeaders } from "./lib/auth-sessions.js";
 import { login, logout } from "./routes/auth.js";
-import { handleMe, handleRoom, handleRecords, handleStaff } from "./routes/behavior.js";
+import { handleMe, handleRoom, handleRecords, handleStaff, handleOverview } from "./routes/behavior.js";
 
 async function routeApi(request, env, url) {
   const method = request.method.toUpperCase();
@@ -18,6 +18,7 @@ async function routeApi(request, env, url) {
   const user = await currentUser(request, env);
   switch (parts[1]) {
     case "me": return handleMe(request, env, user, url);
+    case "overview": return handleOverview(request, env, user, url);
     case "room": return handleRoom(request, env, user, url);
     case "records": return handleRecords(request, env, user, parts, method, url);
     case "staff": return handleStaff(request, env, user, method);

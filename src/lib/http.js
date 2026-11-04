@@ -29,15 +29,21 @@ function parseCookies(request) {
 
 export const ADMIN_ROLES = ["superadmin", "executive"];
 
+// ครูฝ่ายบริหารทั่วไป (ช่อง "ฝ่าย" ในข้อมูลบุคลากรของระบบบริหารโรงเรียนมี general) = ครูฝ่ายปกครองอัตโนมัติ
+export const GENERAL_DEPT_SQL = `EXISTS (SELECT 1 FROM personnel_records p WHERE p.user_id = u.id AND p.status = 'active'
+  AND COALESCE(p.employment_status, 'working') = 'working' AND (',' || REPLACE(COALESCE(p.departments, ''), ' ', '') || ',') LIKE '%,general,%')`;
+
 // อ่านผู้ใช้จาก token แล้วยืนยันกับตาราง users ทุกครั้ง (ระงับบัญชี/เปลี่ยนรหัสมีผลทันที)
 // is_admin = ผู้ดูแลระบบ/ผู้บริหาร (ทุกห้อง + กำหนดครูฝ่ายปกครอง) · is_discipline = ครูฝ่ายปกครอง (ทุกห้อง)
+// ครูฝ่ายปกครอง = กำหนดเองใน ps_staff_roles หรือเป็นครูฝ่ายบริหารทั่วไป
 export async function currentUser(request, env) {
   const token = parseCookies(request)[AUTH_COOKIE_NAME];
   if (!token || !env.JWT_SECRET) return null;
   const payload = await verifyJWT(token, env.JWT_SECRET);
   if (!payload?.sub) return null;
   const user = await env.DB.prepare(
-    `SELECT u.id, u.email, u.full_name, u.role, u.status, u.session_version, r.role AS ps_role
+    `SELECT u.id, u.email, u.full_name, u.role, u.status, u.session_version, r.role AS ps_role,
+            ${GENERAL_DEPT_SQL} AS in_general
        FROM users u LEFT JOIN ps_staff_roles r ON r.user_id = u.id
       WHERE u.id = ? AND u.deleted_at IS NULL`
   ).bind(payload.sub).first();
@@ -46,7 +52,9 @@ export async function currentUser(request, env) {
   if (!await sessionIsActive(env, payload)) return null;
   Object.defineProperty(user, "session_id", { value: payload.sid || null, enumerable: false });
   user.is_admin = ADMIN_ROLES.includes(user.role);
-  user.is_discipline = user.is_admin || user.ps_role === "discipline";
+  user.is_general = Number(user.in_general) === 1;
+  delete user.in_general;
+  user.is_discipline = user.is_admin || user.ps_role === "discipline" || user.is_general;
   return user;
 }
 
