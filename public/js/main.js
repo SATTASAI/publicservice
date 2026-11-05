@@ -17,6 +17,10 @@ const PRESETS = {
   deduct: [["มาสาย", 5], ["แต่งกายไม่ถูกระเบียบ", 5], ["ไม่ทำเวรทำความสะอาด", 5], ["พูดจาไม่สุภาพ", 5], ["ไม่เข้าแถว/ไม่ร่วมกิจกรรม", 5], ["ทำลายทรัพย์สินโรงเรียน", 10], ["ทะเลาะวิวาท", 10], ["หนีเรียน", 10]],
   add: [["จิตอาสาช่วยงานโรงเรียน", 5], ["ช่วยเหลือเพื่อน/ครู", 5], ["ทำความดี เก็บของได้คืนเจ้าของ", 10], ["บำเพ็ญประโยชน์ต่อชุมชน", 10]],
 };
+// โซนความรุนแรงตามคะแนนที่หักต่อครั้ง (เกณฑ์จาก /api/me)
+const ZONE_NAMES = ["เล็กน้อย", "ปานกลาง", "รุนแรง", "รุนแรงมาก"];
+function zoneOf(p) { const z = S.me?.zones || { mid: 6, high: 10, severe: 16 }; p = Math.abs(p); return p >= z.severe ? 3 : p >= z.high ? 2 : p >= z.mid ? 1 : 0; }
+const zoneTag = (p) => { const i = zoneOf(p); return `<span class="tag z${i}">${ZONE_NAMES[i]}</span>`; };
 const TITLES = { overview: "ภาพรวมโรงเรียน", room: "ห้องเรียน", staff: "ครูฝ่ายปกครอง", me: "บัญชี" };
 
 const S = { me: null, year: null, term: 1, tab: null, room: null, students: [], sel: new Set(), ov: null, action: null, hist: null };
@@ -67,7 +71,15 @@ function paintHours() {
   if (edit) { $("hStart").value = h.start; $("hEnd").value = h.end; $("wN").value = S.me.warn_n; }
   $("warnTxt").textContent = S.me.warn_n ? `${S.me.warn_n} ครั้ง (เรื่องเดียวกัน/ภาคเรียน)` : "ไม่ต้องตักเตือน";
   $("warnEdit").hidden = !edit;
+  const z = S.me.zones;
+  $("zoneTxt").textContent = `เล็กน้อย 1–${z.mid - 1} · ปานกลาง ${z.mid}–${z.high - 1} · รุนแรง ${z.high}–${z.severe - 1} · รุนแรงมาก ${z.severe}+`;
+  $("zoneEdit").hidden = !edit;
+  if (edit) { $("zMid").value = z.mid; $("zHigh").value = z.high; $("zSev").value = z.severe; }
 }
+$("zoneSave").onclick = async () => {
+  try { const d = await api("/api/settings", { method: "PUT", body: { zones: { mid: Number($("zMid").value), high: Number($("zHigh").value), severe: Number($("zSev").value) } } }); S.me.zones = d.zones; paintHours(); toast("บันทึกแล้ว"); }
+  catch (e) { toast(e.message); }
+};
 $("warnSave").onclick = async () => {
   try { const d = await api("/api/settings", { method: "PUT", body: { warn_count: Number($("wN").value) } }); S.me.warn_n = d.warn_n; paintHours(); toast("บันทึกแล้ว"); }
   catch (e) { toast(e.message); }
@@ -243,24 +255,30 @@ function openAction(kind, target) {
   $("dWho").textContent = `${target.grade}/${target.room} · ` + (names.length > 3 ? `${names.slice(0, 3).join(", ")} และอีก ${names.length - 3} คน` : names.join(", "));
   const wn = S.me.warn_n;
   $("dWarn").hidden = kind !== "deduct" || !wn;
-  $("dWarn").textContent = `เรื่องเดียวกันต้องตักเตือนครบ ${wn} ครั้งในภาคเรียนก่อน จึงตัดคะแนนได้ — ถ้ายังไม่ครบ ระบบบันทึกเป็น "ตักเตือน" (ไม่ตัดคะแนน)`;
+  $("dWarn").textContent = `เรื่องเดียวกันต้องตักเตือนครบ ${wn} ครั้งในภาคเรียนก่อน จึงตัดคะแนนได้ — ถ้ายังไม่ครบ ระบบบันทึกเป็น "ตักเตือน" (ไม่ตัดคะแนน) · โซนรุนแรงขึ้นไป (หัก ${S.me.zones.high} ขึ้นไป) ตัดได้ทันที`;
   // ตัด/ตักเตือนเรื่องเดียวกันได้วันละครั้ง — บอกจำนวนคนที่บันทึกเรื่องนั้นวันนี้แล้ว
   const doneN = (r) => kind === "deduct" ? (target.today || []).filter((t) => t.includes(r)).length : 0;
   $("dPresets").innerHTML = PRESETS[kind].map(([r, p]) => { const n = doneN(r), all = n && n === target.ids.length;
-    return `<button type="button" data-r="${esc(r)}" data-p="${p}" ${all ? "disabled" : ""} class="${n ? "done" : ""}">${esc(r)}<b class="${kind === "deduct" ? "bad" : "good"}">${kind === "deduct" ? "−" : "+"}${p}</b>${n ? `<small>${all ? "บันทึกแล้ววันนี้" : `บันทึกแล้ว ${n} คน`}</small>` : ""}</button>`; }).join("");
-  $("dReason").value = ""; $("dAmount").value = "5"; $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
+    return `<button type="button" data-r="${esc(r)}" data-p="${p}" ${all ? "disabled" : ""} class="${n ? "done" : ""}">${esc(r)}<b class="${kind === "deduct" ? "bad" : "good"}">${kind === "deduct" ? "−" : "+"}${p}</b>${kind === "deduct" ? zoneTag(p) : ""}${n ? `<small>${all ? "บันทึกแล้ววันนี้" : `บันทึกแล้ว ${n} คน`}</small>` : ""}</button>`; }).join("");
+  $("dReason").value = ""; $("dAmount").value = "5"; paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
   $("dOk").className = `btn lg ${kind === "deduct" ? "danger" : "good"}`;
   $("dlg").showModal();
 }
 $("dPresets").onclick = (e) => {
   const b = e.target.closest("button"); if (!b) return;
   $("dPresets").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
-  $("dReason").value = b.dataset.r; $("dAmount").value = b.dataset.p;
+  $("dReason").value = b.dataset.r; $("dAmount").value = b.dataset.p; paintZone();
 };
 document.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => {
   const v = Math.min(100, Math.max(1, (Number($("dAmount").value) || 0) + Number(b.dataset.step)));
-  $("dAmount").value = v;
+  $("dAmount").value = v; paintZone();
 }));
+function paintZone() {
+  const show = S.action?.kind === "deduct", p = Number($("dAmount").value) || 0;
+  $("dZone").hidden = !show || p < 1;
+  if (show && p >= 1) $("dZone").innerHTML = `โซน ${zoneTag(p)}${S.me.warn_n && p >= S.me.zones.high ? " · ตัดได้ทันที ไม่ต้องตักเตือน" : ""}`;
+}
+$("dAmount").oninput = paintZone;
 $("df").addEventListener("submit", async (e) => {
   if (e.submitter?.value !== "ok") return;
   e.preventDefault();
@@ -296,7 +314,7 @@ async function openHist(t) {
   $("hAct").onclick = (e) => { const b = e.target.closest("[data-k]"); if (!b) return; openAction(b.dataset.k, { ids: [t.id], grade: t.grade, room: t.room, names: [d.student.name], today: [today] }); };
   $("hBody").innerHTML = d.records.length ? d.records.map((r) => `<div class="rec ${r.cancelled_at ? "cx" : ""}">
       ${r.warn ? `<span class="pt warn">เตือน</span>` : `<span class="pt ${r.points < 0 ? "bad" : "good"}">${r.points > 0 ? "+" : ""}${r.points}</span>`}
-      <span class="tx"><span class="rs">${esc(r.reason)}</span><small>${thDate(r.incident_date)} · ${esc(r.created_by_name || "")}${r.cancelled_at ? ` · ยกเลิกโดย ${esc(r.cancelled_by_name || "")}: ${esc(r.cancel_reason)}` : ""}</small></span>
+      <span class="tx"><span class="rs">${esc(r.reason)}${r.points < 0 ? zoneTag(r.points) : ""}</span><small>${thDate(r.incident_date)} · ${esc(r.created_by_name || "")}${r.cancelled_at ? ` · ยกเลิกโดย ${esc(r.cancelled_by_name || "")}: ${esc(r.cancel_reason)}` : ""}</small></span>
       ${r.can_cancel ? `<button class="btn ghost" data-cx="${r.id}" data-warn="${r.warn ? 1 : ""}" data-what="${esc(r.warn ? `ตักเตือน: ${r.reason}` : `${r.points > 0 ? "+" : ""}${r.points} ${r.reason}`)}">ยกเลิก</button>` : ""}
     </div>`).join("") : `<div class="empty">ภาคเรียนนี้ยังไม่มีรายการ (${S.me.base} คะแนน)</div>`;
   if (!$("hist").open) $("hist").showModal();
