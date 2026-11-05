@@ -237,7 +237,7 @@ function openAction(kind, target) {
   $("pPick").hidden = !cats.length;
   $("pCats").innerHTML = cats.length ? [`<button type="button" data-c="" class="on">ทั้งหมด</button>`, ...cats.map((c) => `<button type="button" data-c="${esc(c)}">${esc(c)}</button>`)].join("") : "";
   $("dReason").value = "";
-  paintPresetBtns(); $("dAmount").value = "5"; paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
+  paintPresetBtns(); $("dAmount").value = "5"; lockAmount(); paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
   $("dOk").className = `btn lg ${kind === "deduct" ? "danger" : "good"}`;
   $("dlg").showModal();
 }
@@ -261,8 +261,18 @@ $("pq").onkeydown = (e) => { if (e.key === "Enter") e.preventDefault(); };
 $("dPresets").onclick = (e) => {
   const b = e.target.closest("button"); if (!b) return;
   $("dPresets").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
-  $("dReason").value = b.dataset.r; $("dAmount").value = b.dataset.p; paintZone();
+  $("dReason").value = b.dataset.r; $("dAmount").value = b.dataset.p; lockAmount(); paintZone();
 };
+// ข้อพฤติกรรมที่กำหนดไว้ (ตัดคะแนน) ล็อกคะแนนตายตัว · พิมพ์เหตุผลเองจึงปรับคะแนนได้
+function presetOf(reason) { return S.action?.kind === "deduct" ? S.me.presets_deduct.find((x) => x.reason === reason.trim()) : null; }
+function lockAmount() {
+  const pr = presetOf($("dReason").value), lock = !!pr;
+  if (pr) $("dAmount").value = pr.points;
+  $("dAmount").readOnly = lock;
+  document.querySelectorAll("[data-step]").forEach((b) => (b.disabled = lock));
+  $("dAmount").closest(".stepper").classList.toggle("locked", lock);
+}
+$("dReason").addEventListener("input", () => { lockAmount(); paintZone(); paintPresetBtns(); });
 document.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => {
   const v = Math.min(100, Math.max(1, (Number($("dAmount").value) || 0) + Number(b.dataset.step)));
   $("dAmount").value = v; paintZone();

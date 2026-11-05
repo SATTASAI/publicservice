@@ -267,11 +267,13 @@ export async function handleRecords(request, env, user, parts, method, url) {
     const year = await resolveYear(env, b.year);
     const term = termOf(b.term);
     const { grade, room, roster } = await pickRoom(env, user, year.id, b.grade, b.room);
-    const amount = Number(b.amount);
+    let amount = Number(b.amount);
     if (!Number.isInteger(amount) || amount < 1 || amount > 100) fail(400, "จำนวนคะแนนต้องเป็นจำนวนเต็ม 1–100");
     if (b.kind !== "deduct" && b.kind !== "add") fail(400, "เลือกตัดหรือเพิ่มคะแนน");
     const reason = text(b.reason, 300);
     if (!reason) fail(400, "กรุณาระบุเหตุผล");
+    // ข้อพฤติกรรมที่กำหนดไว้: คะแนนที่ตัดล็อกตามที่กำหนด แก้ไม่ได้
+    if (b.kind === "deduct") { const pr = (await getPresets(env)).find((x) => x.reason === reason); if (pr) amount = pr.points; }
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.incident_date || "")) ? b.incident_date : thaiToday();
     if (date > thaiToday()) fail(400, "วันที่ต้องไม่เกินวันนี้");
     let ids = [...new Set((Array.isArray(b.student_ids) ? b.student_ids : []).map(Number))];
