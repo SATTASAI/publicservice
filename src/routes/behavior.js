@@ -11,6 +11,15 @@ async function getHours(env) {
   const m = Object.fromEntries(results.map((r) => [r.key, r.value]));
   return { start: HHMM.test(m.hours_start || "") ? m.hours_start : HOURS_DEFAULT.start, end: HHMM.test(m.hours_end || "") ? m.hours_end : HOURS_DEFAULT.end };
 }
+// โซนความรุนแรงตามคะแนนที่หักต่อครั้ง: < mid เล็กน้อย · < high ปานกลาง · < severe รุนแรง · ≥ severe รุนแรงมาก
+// โซนรุนแรงขึ้นไป (≥ high) ตัดได้ทันที ไม่ต้องตักเตือน
+const ZONES_DEFAULT = { mid: 6, high: 10, severe: 16 };
+const validZones = (z) => z && [z.mid, z.high, z.severe].every((v) => Number.isInteger(v) && v >= 2 && v <= 100) && z.mid < z.high && z.high < z.severe;
+async function getZones(env) {
+  const r = await env.DB.prepare("SELECT value FROM ps_settings WHERE key = 'zones'").first().catch(() => null);
+  let z = null; try { z = JSON.parse(r?.value || "null"); } catch { /* */ }
+  return validZones(z) ? { mid: z.mid, high: z.high, severe: z.severe } : { ...ZONES_DEFAULT };
+}
 // จำนวนครั้งที่ต้องตักเตือน (เรื่องเดียวกัน ในภาคเรียน) ก่อนตัดคะแนนได้ · 0 = ตัดได้ทันที
 const WARN_DEFAULT = 2, WARN_MAX = 10;
 async function getWarnN(env) {
@@ -110,7 +119,7 @@ export async function handleMe(request, env, user, url) {
     user: { id: user.id, full_name: user.full_name, role: user.role, is_admin: user.is_admin, is_discipline: user.is_discipline, is_general: user.is_general },
     years: await listYears(env), year, terms, term: currentTerm(terms), today: thaiToday(),
     rooms: await editableRooms(env, user, year.id), base: BASE_SCORE, pass_min: PASS_MIN,
-    hours: hoursState(await getHours(env)), warn_n: await getWarnN(env),
+    hours: hoursState(await getHours(env)), warn_n: await getWarnN(env), zones: await getZones(env),
   });
 }
 
@@ -215,9 +224,9 @@ export async function handleRecords(request, env, user, parts, method, url) {
         ids = ids.filter((id) => !skipIds.includes(id));
         skipped = names;
       }
-      // ยังตักเตือนเรื่องนี้ไม่ครบตามที่ตั้งค่า → บันทึกเป็นตักเตือน (ไม่ตัดคะแนน)
+      // ยังตักเตือนเรื่องนี้ไม่ครบตามที่ตั้งค่า → บันทึกเป็นตักเตือน (ไม่ตัดคะแนน) · โซนรุนแรงขึ้นไปตัดได้ทันที
       const n = await getWarnN(env);
-      if (n > 0) {
+      if (n > 0 && amount < (await getZones(env)).high) {
         const wc = await warnCounts(env, year.id, term, ids, reason);
         warnIds = ids.filter((id) => (wc[id] || 0) < n);
         ids = ids.filter((id) => !warnIds.includes(id));
@@ -265,10 +274,19 @@ export async function handleRecords(request, env, user, parts, method, url) {
 // GET/PUT /api/settings — เวลาเปิด-ปิดการบันทึก · แก้ได้เฉพาะครูฝ่ายปกครอง/ผู้ดูแล
 export async function handleSettings(request, env, user, method) {
   requireUser(user);
-  if (method === "GET") return json({ hours: hoursState(await getHours(env)), warn_n: await getWarnN(env) });
+  if (method === "GET") return json({ hours: hoursState(await getHours(env)), warn_n: await getWarnN(env), zones: await getZones(env) });
   if (method === "PUT") {
     if (!user.is_discipline) fail(403, "เฉพาะครูฝ่ายปกครองและผู้ดูแลระบบ");
     const b = await readJson(request);
+    // PUT { zones: { mid, high, severe } } — เกณฑ์โซนความรุนแรง (คะแนนที่หักต่อครั้ง)
+    if (b.zones !== undefined) {
+      const z = { mid: Number(b.zones?.mid), high: Number(b.zones?.high), severe: Number(b.zones?.severe) };
+      if (!validZones(z)) fail(400, "เกณฑ์โซนต้องเป็นจำนวนเต็ม 2–100 และเรียงจากน้อยไปมาก");
+      await env.DB.prepare("INSERT INTO ps_settings (key, value, updated_by) VALUES ('zones', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = datetime('now')")
+        .bind(JSON.stringify(z), user.id).run();
+      await audit(env, user, "settings.zones", z);
+      return json({ ok: true, zones: z });
+    }
     // PUT { warn_count } — จำนวนครั้งที่ต้องตักเตือนก่อนตัดคะแนน
     if (b.warn_count !== undefined) {
       const n = Number(b.warn_count);

@@ -191,3 +191,10 @@ dialog.sheet h2 { margin: 0 0 .15rem; font-size: 1.25rem; font-weight: 800; }
 .info.warn { background: var(--warnsoft); color: var(--warn); font-weight: 600; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .hours { display: flex; align-items: center; gap: .4rem; } .hours input { font: inherit; padding: .35rem .5rem; border: 1.5px solid var(--line); border-radius: 10px; }
+
+/* โซนความรุนแรง */
+.tag.z0 { background: #e9f9f2; color: #047857; } .tag.z1 { background: #fff7e6; color: #b45309; }
+.tag.z2 { background: #ffedd5; color: #c2410c; } .tag.z3 { background: var(--bad); color: #fff; }
+.zone { font-size: .88rem; font-weight: 600; color: var(--ink2); margin: -.2rem 0 .6rem; }
+.hours input[type=number] { width: 4.2rem; }
+#zoneEdit { flex-wrap: wrap; gap: .5rem; } #zoneEdit .hours { flex-wrap: wrap; }
