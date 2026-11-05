@@ -95,6 +95,11 @@
         <div class="item" id="zoneEdit" hidden><span class="hours">ปานกลาง≥<input type="number" id="zMid" min="2" max="100" inputmode="numeric" aria-label="เริ่มโซนปานกลาง"> รุนแรง≥<input type="number" id="zHigh" min="2" max="100" inputmode="numeric" aria-label="เริ่มโซนรุนแรง"> รุนแรงมาก≥<input type="number" id="zSev" min="2" max="100" inputmode="numeric" aria-label="เริ่มโซนรุนแรงมาก"></span><button class="btn primary" id="zoneSave">บันทึก</button></div>
         <button class="item" id="openPeriod"><span>ปีการศึกษา / ภาคเรียน</span><span class="muted" id="mePeriod"></span></button>
       </div>
+      <div id="presetSec" hidden>
+        <h3 class="sec">ข้อพฤติกรรมที่ตัดคะแนน <small>(ผู้ดูแลระบบ)</small></h3>
+        <div class="group" id="presetList"></div>
+        <div class="group"><div class="item"><span class="hours"><input id="pReason" maxlength="100" placeholder="ข้อพฤติกรรมใหม่ / ชื่อเดิมเพื่อแก้คะแนน" aria-label="ข้อพฤติกรรม"> −<input type="number" id="pPoints" min="1" max="100" value="5" inputmode="numeric" aria-label="คะแนนที่ตัด"></span><button class="btn primary" id="pAdd">เพิ่ม</button></div></div>
+      </div>
       <button class="btn danger-soft block lg" id="logout">ออกจากระบบ</button>
     </section>
   </main>

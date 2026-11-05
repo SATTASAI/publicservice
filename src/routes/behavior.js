@@ -20,6 +20,24 @@ async function getZones(env) {
   let z = null; try { z = JSON.parse(r?.value || "null"); } catch { /* */ }
   return validZones(z) ? { mid: z.mid, high: z.high, severe: z.severe } : { ...ZONES_DEFAULT };
 }
+// ข้อพฤติกรรมที่ตัดคะแนน (ปุ่มเลือกเร็ว) — ผู้ดูแลระบบ/ผู้บริหารเพิ่ม/ลบได้
+const PRESETS_DEFAULT = [["มาสาย", 5], ["แต่งกายไม่ถูกระเบียบ", 5], ["ไม่ทำเวรทำความสะอาด", 5], ["พูดจาไม่สุภาพ", 5], ["ไม่เข้าแถว/ไม่ร่วมกิจกรรม", 5], ["ทำลายทรัพย์สินโรงเรียน", 10], ["ทะเลาะวิวาท", 10], ["หนีเรียน", 10]]
+  .map(([reason, points]) => ({ reason, points }));
+function cleanPresets(list) {
+  if (!Array.isArray(list) || list.length > 50) return null;
+  const out = [];
+  for (const x of list) {
+    const reason = String(x?.reason ?? "").trim().slice(0, 100), points = Number(x?.points);
+    if (!reason || !Number.isInteger(points) || points < 1 || points > 100 || out.some((o) => o.reason === reason)) return null;
+    out.push({ reason, points });
+  }
+  return out;
+}
+async function getPresets(env) {
+  const r = await env.DB.prepare("SELECT value FROM ps_settings WHERE key = 'presets_deduct'").first().catch(() => null);
+  let p = null; try { p = cleanPresets(JSON.parse(r?.value || "null")); } catch { /* */ }
+  return p || PRESETS_DEFAULT;
+}
 // จำนวนครั้งที่ต้องตักเตือน (เรื่องเดียวกัน ในภาคเรียน) ก่อนตัดคะแนนได้ · 0 = ตัดได้ทันที
 const WARN_DEFAULT = 2, WARN_MAX = 10;
 async function getWarnN(env) {
@@ -120,6 +138,7 @@ export async function handleMe(request, env, user, url) {
     years: await listYears(env), year, terms, term: currentTerm(terms), today: thaiToday(),
     rooms: await editableRooms(env, user, year.id), base: BASE_SCORE, pass_min: PASS_MIN,
     hours: hoursState(await getHours(env)), warn_n: await getWarnN(env), zones: await getZones(env),
+    presets_deduct: await getPresets(env),
   });
 }
 
@@ -271,13 +290,22 @@ export async function handleRecords(request, env, user, parts, method, url) {
   fail(405, "ไม่รองรับ");
 }
 
-// GET/PUT /api/settings — เวลาเปิด-ปิดการบันทึก · แก้ได้เฉพาะครูฝ่ายปกครอง/ผู้ดูแล
+// GET/PUT /api/settings — เวลาเปิด-ปิด ตักเตือน โซน ข้อพฤติกรรม · แก้ได้เฉพาะผู้ดูแลระบบ/ผู้บริหาร
 export async function handleSettings(request, env, user, method) {
   requireUser(user);
   if (method === "GET") return json({ hours: hoursState(await getHours(env)), warn_n: await getWarnN(env), zones: await getZones(env) });
   if (method === "PUT") {
-    if (!user.is_discipline) fail(403, "เฉพาะครูฝ่ายปกครองและผู้ดูแลระบบ");
+    requireAdmin(user);
     const b = await readJson(request);
+    // PUT { presets_deduct: [{ reason, points }] } — ข้อพฤติกรรมและคะแนนที่ตัด
+    if (b.presets_deduct !== undefined) {
+      const p = cleanPresets(b.presets_deduct);
+      if (!p) fail(400, "ข้อพฤติกรรมไม่ถูกต้อง (ชื่อห้ามว่าง/ซ้ำ คะแนน 1–100 ไม่เกิน 50 ข้อ)");
+      await env.DB.prepare("INSERT INTO ps_settings (key, value, updated_by) VALUES ('presets_deduct', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = datetime('now')")
+        .bind(JSON.stringify(p), user.id).run();
+      await audit(env, user, "settings.presets", { count: p.length });
+      return json({ ok: true, presets_deduct: p });
+    }
     // PUT { zones: { mid, high, severe } } — เกณฑ์โซนความรุนแรง (คะแนนที่หักต่อครั้ง)
     if (b.zones !== undefined) {
       const z = { mid: Number(b.zones?.mid), high: Number(b.zones?.high), severe: Number(b.zones?.severe) };

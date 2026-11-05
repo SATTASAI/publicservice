@@ -198,3 +198,4 @@ dialog.sheet h2 { margin: 0 0 .15rem; font-size: 1.25rem; font-weight: 800; }
 .zone { font-size: .88rem; font-weight: 600; color: var(--ink2); margin: -.2rem 0 .6rem; }
 .hours input[type=number] { width: 4.2rem; }
 #zoneEdit { flex-wrap: wrap; gap: .5rem; } #zoneEdit .hours { flex-wrap: wrap; }
+#pReason { flex: 1; min-width: 0; } #presetSec .hours { flex: 1; min-width: 0; }

@@ -51,7 +51,7 @@ async function boot() {
   $("navStaff").hidden = !u.is_admin;
   $("base").textContent = S.me.base; $("passmin").textContent = S.me.pass_min;
   $("profile").innerHTML = `<div class="av">${esc((u.full_name || "?").replace(/^(นาย|นางสาว|นาง)\s*/, "").charAt(0))}</div><div><b>${esc(u.full_name)}</b><span class="muted">${roleLabel(u)}</span></div>`;
-  fillYears(); paintPeriod(); paintHours();
+  fillYears(); paintPeriod(); paintHours(); paintPresets();
   go(u.is_discipline ? "overview" : "room");
 }
 function showLogin(msg) {
@@ -65,7 +65,7 @@ $("lf").addEventListener("submit", async (e) => {
     await api("/api/auth/login", { method: "POST", body: { ...Object.fromEntries(new FormData($("lf"))), turnstile_token: window.SchoolTurnstile?.token() || "" } });
     await // ---------- เวลาเปิดบันทึก ----------
 function paintHours() {
-  const h = S.me.hours, edit = S.me.user.is_discipline;
+  const h = S.me.hours, edit = S.me.user.is_admin;
   $("hoursTxt").textContent = `จ.–ศ. ${h.start}–${h.end} น.`;
   $("hoursEdit").hidden = !edit;
   if (edit) { $("hStart").value = h.start; $("hEnd").value = h.end; $("wN").value = S.me.warn_n; }
@@ -76,8 +76,30 @@ function paintHours() {
   $("zoneEdit").hidden = !edit;
   if (edit) { $("zMid").value = z.mid; $("zHigh").value = z.high; $("zSev").value = z.severe; }
 }
+function paintPresets() {
+  const edit = S.me.user.is_admin;
+  $("presetSec").hidden = !edit;
+  if (!edit) return;
+  $("presetList").innerHTML = S.me.presets_deduct.map((x, i) => `<div class="item"><span class="who"><b>${esc(x.reason)}</b><small>−${x.points} ${zoneTag(x.points)}</small></span><button class="btn ghost" data-del="${i}">ลบ</button></div>`).join("") || `<div class="item muted">ยังไม่มีข้อพฤติกรรม</div>`;
+}
+async function savePresets(list) {
+  try { const d = await api("/api/settings", { method: "PUT", body: { presets_deduct: list } }); S.me.presets_deduct = d.presets_deduct; paintPresets(); toast("บันทึกแล้ว"); return true; }
+  catch (e) { toast(e.message); return false; }
+}
+$("presetList").onclick = (e) => {
+  const b = e.target.closest("[data-del]"); if (!b) return;
+  const x = S.me.presets_deduct[Number(b.dataset.del)];
+  if (!confirm(`ลบ "${x.reason}"?`)) return;
+  savePresets(S.me.presets_deduct.filter((_, i) => i !== Number(b.dataset.del)));
+};
+$("pAdd").onclick = async () => {
+  const reason = $("pReason").value.trim(), points = Number($("pPoints").value);
+  if (!reason) return toast("ระบุข้อพฤติกรรม");
+  const cur = S.me.presets_deduct, list = cur.some((x) => x.reason === reason) ? cur.map((x) => (x.reason === reason ? { reason, points } : x)) : cur.concat({ reason, points });
+  if (await savePresets(list)) { $("pReason").value = ""; $("pPoints").value = "5"; }
+};
 $("zoneSave").onclick = async () => {
-  try { const d = await api("/api/settings", { method: "PUT", body: { zones: { mid: Number($("zMid").value), high: Number($("zHigh").value), severe: Number($("zSev").value) } } }); S.me.zones = d.zones; paintHours(); toast("บันทึกแล้ว"); }
+  try { const d = await api("/api/settings", { method: "PUT", body: { zones: { mid: Number($("zMid").value), high: Number($("zHigh").value), severe: Number($("zSev").value) } } }); S.me.zones = d.zones; paintHours(); paintPresets(); toast("บันทึกแล้ว"); }
   catch (e) { toast(e.message); }
 };
 $("warnSave").onclick = async () => {
@@ -258,7 +280,8 @@ function openAction(kind, target) {
   $("dWarn").textContent = `เรื่องเดียวกันต้องตักเตือนครบ ${wn} ครั้งในภาคเรียนก่อน จึงตัดคะแนนได้ — ถ้ายังไม่ครบ ระบบบันทึกเป็น "ตักเตือน" (ไม่ตัดคะแนน) · โซนรุนแรงขึ้นไป (หัก ${S.me.zones.high} ขึ้นไป) ตัดได้ทันที`;
   // ตัด/ตักเตือนเรื่องเดียวกันได้วันละครั้ง — บอกจำนวนคนที่บันทึกเรื่องนั้นวันนี้แล้ว
   const doneN = (r) => kind === "deduct" ? (target.today || []).filter((t) => t.includes(r)).length : 0;
-  $("dPresets").innerHTML = PRESETS[kind].map(([r, p]) => { const n = doneN(r), all = n && n === target.ids.length;
+  const presets = kind === "deduct" ? S.me.presets_deduct.map((x) => [x.reason, x.points]) : PRESETS.add;
+  $("dPresets").innerHTML = presets.map(([r, p]) => { const n = doneN(r), all = n && n === target.ids.length;
     return `<button type="button" data-r="${esc(r)}" data-p="${p}" ${all ? "disabled" : ""} class="${n ? "done" : ""}">${esc(r)}<b class="${kind === "deduct" ? "bad" : "good"}">${kind === "deduct" ? "−" : "+"}${p}</b>${kind === "deduct" ? zoneTag(p) : ""}${n ? `<small>${all ? "บันทึกแล้ววันนี้" : `บันทึกแล้ว ${n} คน`}</small>` : ""}</button>`; }).join("");
   $("dReason").value = ""; $("dAmount").value = "5"; paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
   $("dOk").className = `btn lg ${kind === "deduct" ? "danger" : "good"}`;
