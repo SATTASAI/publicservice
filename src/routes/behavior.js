@@ -11,6 +11,13 @@ async function getHours(env) {
   const m = Object.fromEntries(results.map((r) => [r.key, r.value]));
   return { start: HHMM.test(m.hours_start || "") ? m.hours_start : HOURS_DEFAULT.start, end: HHMM.test(m.hours_end || "") ? m.hours_end : HOURS_DEFAULT.end };
 }
+// จำนวนครั้งที่ต้องตักเตือน (เรื่องเดียวกัน ในภาคเรียน) ก่อนตัดคะแนนได้ · 0 = ตัดได้ทันที
+const WARN_DEFAULT = 2, WARN_MAX = 10;
+async function getWarnN(env) {
+  const r = await env.DB.prepare("SELECT value FROM ps_settings WHERE key = 'warn_count'").first().catch(() => null);
+  const n = Number(r?.value);
+  return Number.isInteger(n) && n >= 0 && n <= WARN_MAX ? n : WARN_DEFAULT;
+}
 function hoursState(h) {
   const th = new Date(Date.now() + 7 * 3600e3);
   const day = th.getUTCDay(), now = th.toISOString().slice(11, 16);
@@ -22,17 +29,34 @@ async function requireOpen(env) {
   if (!st.open) fail(403, `ระบบเปิดบันทึกเฉพาะวันจันทร์–ศุกร์ เวลา ${st.start}–${st.end} น.`);
 }
 
-// { student_id: [เรื่องที่ถูกตัดแล้วในวันที่ date] }
-async function deductedOn(env, ids, date) {
+// { student_id: [เรื่องที่ถูกตัดแล้ว / ตักเตือนแล้ว ในวันที่ date] }
+async function reasonsOn(env, ids, date, warn) {
+  const out = {};
+  const sql = warn
+    ? "SELECT student_id, reason FROM ps_behavior_warnings WHERE incident_date = ? AND cancelled_at IS NULL"
+    : "SELECT student_id, reason FROM ps_behavior_records WHERE incident_date = ? AND points < 0 AND cancelled_at IS NULL";
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    if (!chunk.length) continue;
+    const { results } = await env.DB.prepare(`${sql} AND student_id IN (${chunk.map(() => "?").join(",")})`).bind(date, ...chunk).all();
+    for (const r of results) { const a = (out[r.student_id] ||= []); if (!a.includes(r.reason)) a.push(r.reason); }
+  }
+  return out;
+}
+const deductedOn = (env, ids, date) => reasonsOn(env, ids, date, false);
+const warnedOn = (env, ids, date) => reasonsOn(env, ids, date, true);
+
+// { student_id: จำนวนครั้งที่ถูกตักเตือนเรื่อง reason ในภาคเรียน } (reason ว่าง = ทุกเรื่อง)
+async function warnCounts(env, yearId, term, ids, reason) {
   const out = {};
   for (let i = 0; i < ids.length; i += 90) {
     const chunk = ids.slice(i, i + 90);
     if (!chunk.length) continue;
     const { results } = await env.DB.prepare(
-      `SELECT student_id, reason FROM ps_behavior_records WHERE incident_date = ? AND points < 0 AND cancelled_at IS NULL
-          AND student_id IN (${chunk.map(() => "?").join(",")})`
-    ).bind(date, ...chunk).all();
-    for (const r of results) { const a = (out[r.student_id] ||= []); if (!a.includes(r.reason)) a.push(r.reason); }
+      `SELECT student_id, COUNT(*) AS n FROM ps_behavior_warnings WHERE academic_year_id = ? AND term_number = ? AND cancelled_at IS NULL
+          ${reason ? "AND reason = ?" : ""} AND student_id IN (${chunk.map(() => "?").join(",")}) GROUP BY student_id`
+    ).bind(yearId, term, ...(reason ? [reason] : []), ...chunk).all();
+    for (const r of results) out[r.student_id] = Number(r.n);
   }
   return out;
 }
@@ -86,7 +110,7 @@ export async function handleMe(request, env, user, url) {
     user: { id: user.id, full_name: user.full_name, role: user.role, is_admin: user.is_admin, is_discipline: user.is_discipline, is_general: user.is_general },
     years: await listYears(env), year, terms, term: currentTerm(terms), today: thaiToday(),
     rooms: await editableRooms(env, user, year.id), base: BASE_SCORE, pass_min: PASS_MIN,
-    hours: hoursState(await getHours(env)),
+    hours: hoursState(await getHours(env)), warn_n: await getWarnN(env),
   });
 }
 
@@ -96,12 +120,15 @@ export async function handleRoom(request, env, user, url) {
   const term = termOf(url.searchParams.get("term"));
   const { grade, room, roster } = await pickRoom(env, user, year.id, url.searchParams.get("grade"), url.searchParams.get("room"));
   const s = await scores(env, year.id, term, roster.map((r) => r.id));
-  const today = await deductedOn(env, roster.map((r) => r.id), thaiToday());
+  const ids = roster.map((r) => r.id);
+  const today = await deductedOn(env, ids, thaiToday());
+  const todayW = await warnedOn(env, ids, thaiToday());
+  const wc = await warnCounts(env, year.id, term, ids);
   return json({ year, term, grade, room, students: roster.map((r) => {
     const score = s[r.id]?.score ?? BASE_SCORE;
     return { id: r.id, number: r.number, code: r.student_code, name: studentName(r), left: LEFT_STATUSES.includes(r.enrollment_status),
       score, pass: score >= PASS_MIN, deduct_count: Number(s[r.id]?.deduct_count || 0), add_count: Number(s[r.id]?.add_count || 0),
-      today_deducted: today[r.id] || [] };
+      warn_count: wc[r.id] || 0, today_deducted: today[r.id] || [], today_warned: todayW[r.id] || [] };
   }) });
 }
 
@@ -146,8 +173,16 @@ export async function handleRecords(request, env, user, parts, method, url) {
         WHERE r.academic_year_id = ? AND r.term_number = ? AND r.student_id = ? ORDER BY r.id`
     ).bind(year.id, term, sid).all();
     const score = foldScore(results.filter((r) => !r.cancelled_at).map((r) => r.points));
-    return json({ student: { id: sid, number: st.number, name: studentName(st) }, score,
-      records: results.reverse().map((r) => ({ ...r, can_cancel: !r.cancelled_at && (user.is_discipline || r.created_by === user.id) })) });
+    const { results: warns } = await env.DB.prepare(
+      `SELECT w.id, 0 AS points, w.reason, w.incident_date, w.created_at, w.created_by, u.full_name AS created_by_name,
+              w.cancelled_at, w.cancel_reason, c.full_name AS cancelled_by_name
+         FROM ps_behavior_warnings w LEFT JOIN users u ON u.id = w.created_by LEFT JOIN users c ON c.id = w.cancelled_by
+        WHERE w.academic_year_id = ? AND w.term_number = ? AND w.student_id = ?`
+    ).bind(year.id, term, sid).all();
+    const all = [...results, ...warns.map((w) => ({ ...w, warn: true }))]
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || b.id - a.id);
+    return json({ student: { id: sid, number: st.number, name: studentName(st) }, score, warn_n: await getWarnN(env),
+      records: all.map((r) => ({ ...r, can_cancel: !r.cancelled_at && (user.is_discipline || r.created_by === user.id) })) });
   }
 
   // POST /api/records — ตัด/เพิ่มคะแนน (เลือกได้หลายคนพร้อมกัน)
@@ -169,23 +204,36 @@ export async function handleRecords(request, env, user, parts, method, url) {
     const active = new Set(roster.filter((r) => !LEFT_STATUSES.includes(r.enrollment_status)).map((r) => r.id));
     for (const id of ids) if (!active.has(id)) fail(400, "มีนักเรียนที่ไม่อยู่ในห้องนี้ หรือย้ายออกแล้ว");
     const points = b.kind === "deduct" ? -amount : amount;
-    // ตัดคะแนนเรื่องเดียวกันได้วันละครั้ง (นับรวมทุกครู) · ยกเลิกรายการแล้วตัดใหม่ได้
-    let skipped = [];
+    // ตัด/ตักเตือนเรื่องเดียวกันได้วันละครั้ง (นับรวมทุกครู) · ยกเลิกรายการแล้วบันทึกใหม่ได้
+    let skipped = [], warnIds = [];
     if (points < 0) {
-      const done = await deductedOn(env, ids, date);
-      skipped = ids.filter((id) => (done[id] || []).includes(reason));
-      if (skipped.length) {
-        const names = roster.filter((r) => skipped.includes(r.id)).map(studentName);
-        if (skipped.length === ids.length) fail(409, `ถูกตัดคะแนนเรื่อง "${reason}" ในวันนี้แล้ว: ${names.join(", ")}`);
-        ids = ids.filter((id) => !skipped.includes(id));
+      const done = await deductedOn(env, ids, date), warned = await warnedOn(env, ids, date);
+      const skipIds = ids.filter((id) => (done[id] || []).includes(reason) || (warned[id] || []).includes(reason));
+      if (skipIds.length) {
+        const names = roster.filter((r) => skipIds.includes(r.id)).map(studentName);
+        if (skipIds.length === ids.length) fail(409, `ถูกตัดคะแนน/ตักเตือนเรื่อง "${reason}" ในวันนี้แล้ว: ${names.join(", ")}`);
+        ids = ids.filter((id) => !skipIds.includes(id));
         skipped = names;
       }
+      // ยังตักเตือนเรื่องนี้ไม่ครบตามที่ตั้งค่า → บันทึกเป็นตักเตือน (ไม่ตัดคะแนน)
+      const n = await getWarnN(env);
+      if (n > 0) {
+        const wc = await warnCounts(env, year.id, term, ids, reason);
+        warnIds = ids.filter((id) => (wc[id] || 0) < n);
+        ids = ids.filter((id) => !warnIds.includes(id));
+      }
     }
-    await env.DB.batch(ids.map((sid) => env.DB.prepare(
-      "INSERT INTO ps_behavior_records (academic_year_id, term_number, student_id, points, reason, incident_date, created_by) VALUES (?,?,?,?,?,?,?)"
-    ).bind(year.id, term, sid, points, reason, date, user.id)));
-    await audit(env, user, "behavior.add", { grade, room, term, points, reason, students: ids });
-    return json({ ok: true, saved: ids.length, skipped });
+    await env.DB.batch([
+      ...ids.map((sid) => env.DB.prepare(
+        "INSERT INTO ps_behavior_records (academic_year_id, term_number, student_id, points, reason, incident_date, created_by) VALUES (?,?,?,?,?,?,?)"
+      ).bind(year.id, term, sid, points, reason, date, user.id)),
+      ...warnIds.map((sid) => env.DB.prepare(
+        "INSERT INTO ps_behavior_warnings (academic_year_id, term_number, student_id, reason, incident_date, created_by) VALUES (?,?,?,?,?,?)"
+      ).bind(year.id, term, sid, reason, date, user.id)),
+    ]);
+    if (ids.length) await audit(env, user, "behavior.add", { grade, room, term, points, reason, students: ids });
+    if (warnIds.length) await audit(env, user, "behavior.warn", { grade, room, term, reason, students: warnIds });
+    return json({ ok: true, saved: ids.length, warned: warnIds.length, skipped });
   }
 
   // POST /api/records/:id/cancel — ผู้บันทึก หรือครูฝ่ายปกครอง/ผู้ดูแล ยกเลิกได้ (ต้องมีเหตุผล)
@@ -194,7 +242,8 @@ export async function handleRecords(request, env, user, parts, method, url) {
     const b = await readJson(request);
     const reason = text(b.reason, 300);
     if (!reason) fail(400, "กรุณาระบุเหตุผลที่ยกเลิก");
-    const rec = await env.DB.prepare("SELECT * FROM ps_behavior_records WHERE id = ?").bind(id).first();
+    const table = b.warn ? "ps_behavior_warnings" : "ps_behavior_records";
+    const rec = await env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(id).first();
     if (!rec) fail(404, "ไม่พบรายการ");
     if (rec.cancelled_at) fail(409, "รายการนี้ถูกยกเลิกแล้ว");
     if (!user.is_discipline && rec.created_by !== user.id) fail(403, "ยกเลิกได้เฉพาะรายการที่ตนบันทึก");
@@ -205,9 +254,9 @@ export async function handleRecords(request, env, user, parts, method, url) {
       for (const r of rooms) if ((await roomRoster(env, rec.academic_year_id, r.grade_level, r.classroom)).some((s) => s.id === rec.student_id)) { found = true; break; }
       if (!found) fail(403, "นักเรียนไม่อยู่ในห้องที่ท่านดูแล");
     }
-    await env.DB.prepare("UPDATE ps_behavior_records SET cancelled_at = datetime('now'), cancelled_by = ?, cancel_reason = ? WHERE id = ? AND cancelled_at IS NULL")
+    await env.DB.prepare(`UPDATE ${table} SET cancelled_at = datetime('now'), cancelled_by = ?, cancel_reason = ? WHERE id = ? AND cancelled_at IS NULL`)
       .bind(user.id, reason, id).run();
-    await audit(env, user, "behavior.cancel", { id, reason });
+    await audit(env, user, b.warn ? "warn.cancel" : "behavior.cancel", { id, reason });
     return json({ ok: true });
   }
   fail(405, "ไม่รองรับ");
@@ -216,10 +265,19 @@ export async function handleRecords(request, env, user, parts, method, url) {
 // GET/PUT /api/settings — เวลาเปิด-ปิดการบันทึก · แก้ได้เฉพาะครูฝ่ายปกครอง/ผู้ดูแล
 export async function handleSettings(request, env, user, method) {
   requireUser(user);
-  if (method === "GET") return json({ hours: hoursState(await getHours(env)) });
+  if (method === "GET") return json({ hours: hoursState(await getHours(env)), warn_n: await getWarnN(env) });
   if (method === "PUT") {
     if (!user.is_discipline) fail(403, "เฉพาะครูฝ่ายปกครองและผู้ดูแลระบบ");
     const b = await readJson(request);
+    // PUT { warn_count } — จำนวนครั้งที่ต้องตักเตือนก่อนตัดคะแนน
+    if (b.warn_count !== undefined) {
+      const n = Number(b.warn_count);
+      if (!Number.isInteger(n) || n < 0 || n > WARN_MAX) fail(400, `จำนวนครั้งตักเตือนต้องเป็น 0–${WARN_MAX}`);
+      await env.DB.prepare("INSERT INTO ps_settings (key, value, updated_by) VALUES ('warn_count', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = datetime('now')")
+        .bind(String(n), user.id).run();
+      await audit(env, user, "settings.warn", { warn_count: n });
+      return json({ ok: true, warn_n: n });
+    }
     const start = String(b.start || ""), end = String(b.end || "");
     if (!HHMM.test(start) || !HHMM.test(end)) fail(400, "รูปแบบเวลาไม่ถูกต้อง (HH:MM)");
     if (start >= end) fail(400, "เวลาเปิดต้องก่อนเวลาปิด");

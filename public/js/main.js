@@ -64,8 +64,14 @@ function paintHours() {
   const h = S.me.hours, edit = S.me.user.is_discipline;
   $("hoursTxt").textContent = `จ.–ศ. ${h.start}–${h.end} น.`;
   $("hoursEdit").hidden = !edit;
-  if (edit) { $("hStart").value = h.start; $("hEnd").value = h.end; }
+  if (edit) { $("hStart").value = h.start; $("hEnd").value = h.end; $("wN").value = S.me.warn_n; }
+  $("warnTxt").textContent = S.me.warn_n ? `${S.me.warn_n} ครั้ง (เรื่องเดียวกัน/ภาคเรียน)` : "ไม่ต้องตักเตือน";
+  $("warnEdit").hidden = !edit;
 }
+$("warnSave").onclick = async () => {
+  try { const d = await api("/api/settings", { method: "PUT", body: { warn_count: Number($("wN").value) } }); S.me.warn_n = d.warn_n; paintHours(); toast("บันทึกแล้ว"); }
+  catch (e) { toast(e.message); }
+};
 $("hoursSave").onclick = async () => {
   try { const d = await api("/api/settings", { method: "PUT", body: { start: $("hStart").value, end: $("hEnd").value } }); S.me.hours = d.hours; paintHours(); paintOpen(); toast("บันทึกเวลาแล้ว"); }
   catch (e) { toast(e.message); }
@@ -181,7 +187,7 @@ function card(s, { room = false, nosel = false } = {}) {
   return `<div class="st ${s.pass ? "" : "fail"} ${s.left ? "left" : ""} ${sel ? "sel" : ""}" data-id="${s.id}" data-g="${esc(s.grade || S.room?.grade || "")}" data-r="${esc(s.room || S.room?.room || "")}">
     ${nosel || s.left ? "" : `<span class="chk" data-chk>${sel ? "✓" : ""}</span>`}
     <div class="av">${s.number ?? "–"}</div>
-    <div class="nm"><b>${esc(s.name)}</b><small>${room ? `<span class="tag room">${esc(s.grade)}/${esc(s.room)}</span> ` : ""}${esc(s.code)}${s.left ? " · ย้ายออก" : ""}${s.deduct_count ? ` · ตัด ${s.deduct_count}` : ""}${s.add_count ? ` · เพิ่ม ${s.add_count}` : ""}${s.pass ? "" : ' <span class="tag no">ไม่ผ่าน</span>'}</small>${(s.today_deducted || []).length ? `<small class="today">⚠ วันนี้ถูกตัดแล้ว: ${s.today_deducted.map(esc).join(", ")}</small>` : ""}</div>
+    <div class="nm"><b>${esc(s.name)}</b><small>${room ? `<span class="tag room">${esc(s.grade)}/${esc(s.room)}</span> ` : ""}${esc(s.code)}${s.left ? " · ย้ายออก" : ""}${s.deduct_count ? ` · ตัด ${s.deduct_count}` : ""}${s.add_count ? ` · เพิ่ม ${s.add_count}` : ""}${s.warn_count ? ` · เตือน ${s.warn_count}` : ""}${s.pass ? "" : ' <span class="tag no">ไม่ผ่าน</span>'}</small>${(s.today_deducted || []).length ? `<small class="today">⚠ วันนี้ถูกตัดแล้ว: ${s.today_deducted.map(esc).join(", ")}</small>` : ""}${(s.today_warned || []).length ? `<small class="today">⚠ วันนี้ตักเตือนแล้ว: ${s.today_warned.map(esc).join(", ")}</small>` : ""}</div>
     ${ring(s.score)}
   </div>`;
 }
@@ -223,7 +229,7 @@ function updateSel() {
   $("selBar").hidden = !n || S.tab !== "room";
   $("selCount").textContent = `เลือก ${n} คน`;
 }
-const selTarget = () => { const st = S.students.filter((s) => S.sel.has(s.id)); return { ids: st.map((s) => s.id), grade: S.room.grade, room: S.room.room, names: st.map((s) => s.name), today: st.map((s) => s.today_deducted || []) }; };
+const selTarget = () => { const st = S.students.filter((s) => S.sel.has(s.id)); return { ids: st.map((s) => s.id), grade: S.room.grade, room: S.room.room, names: st.map((s) => s.name), today: st.map((s) => [...(s.today_deducted || []), ...(s.today_warned || [])]) }; };
 $("bDeduct").onclick = () => openAction("deduct", selTarget());
 $("bAdd").onclick = () => openAction("add", selTarget());
 
@@ -235,10 +241,13 @@ function openAction(kind, target) {
   $("dTitle").textContent = kind === "deduct" ? "ตัดคะแนนพฤติกรรม" : "เพิ่มคะแนนพฤติกรรม";
   $("dTitle").className = kind === "deduct" ? "bad" : "good";
   $("dWho").textContent = `${target.grade}/${target.room} · ` + (names.length > 3 ? `${names.slice(0, 3).join(", ")} และอีก ${names.length - 3} คน` : names.join(", "));
-  // ตัดเรื่องเดียวกันได้วันละครั้ง — บอกจำนวนคนที่ถูกตัดเรื่องนั้นวันนี้แล้ว
+  const wn = S.me.warn_n;
+  $("dWarn").hidden = kind !== "deduct" || !wn;
+  $("dWarn").textContent = `เรื่องเดียวกันต้องตักเตือนครบ ${wn} ครั้งในภาคเรียนก่อน จึงตัดคะแนนได้ — ถ้ายังไม่ครบ ระบบบันทึกเป็น "ตักเตือน" (ไม่ตัดคะแนน)`;
+  // ตัด/ตักเตือนเรื่องเดียวกันได้วันละครั้ง — บอกจำนวนคนที่บันทึกเรื่องนั้นวันนี้แล้ว
   const doneN = (r) => kind === "deduct" ? (target.today || []).filter((t) => t.includes(r)).length : 0;
   $("dPresets").innerHTML = PRESETS[kind].map(([r, p]) => { const n = doneN(r), all = n && n === target.ids.length;
-    return `<button type="button" data-r="${esc(r)}" data-p="${p}" ${all ? "disabled" : ""} class="${n ? "done" : ""}">${esc(r)}<b class="${kind === "deduct" ? "bad" : "good"}">${kind === "deduct" ? "−" : "+"}${p}</b>${n ? `<small>${all ? "ตัดแล้ววันนี้" : `ตัดแล้ว ${n} คน`}</small>` : ""}</button>`; }).join("");
+    return `<button type="button" data-r="${esc(r)}" data-p="${p}" ${all ? "disabled" : ""} class="${n ? "done" : ""}">${esc(r)}<b class="${kind === "deduct" ? "bad" : "good"}">${kind === "deduct" ? "−" : "+"}${p}</b>${n ? `<small>${all ? "บันทึกแล้ววันนี้" : `บันทึกแล้ว ${n} คน`}</small>` : ""}</button>`; }).join("");
   $("dReason").value = ""; $("dAmount").value = "5"; $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
   $("dOk").className = `btn lg ${kind === "deduct" ? "danger" : "good"}`;
   $("dlg").showModal();
@@ -260,7 +269,9 @@ $("df").addEventListener("submit", async (e) => {
   try {
     const res = await api("/api/records", { method: "POST", body: { year: S.year, term: S.term, grade: a.grade, room: a.room,
       kind: a.kind, amount: Number($("dAmount").value), reason: $("dReason").value, incident_date: $("dDate").value, student_ids: a.ids } });
-    $("dlg").close(); toast(res.skipped?.length ? `บันทึกแล้ว ${res.saved} คน · ข้าม ${res.skipped.length} คนที่ถูกตัดเรื่องนี้วันนี้แล้ว` : `บันทึกแล้ว ${res.saved} คน`);
+    const msg = [res.saved ? `${a.kind === "deduct" ? "ตัดคะแนน" : "บันทึกแล้ว"} ${res.saved} คน` : "", res.warned ? `ตักเตือน ${res.warned} คน` : "",
+      res.skipped?.length ? `ข้าม ${res.skipped.length} คนที่บันทึกเรื่องนี้วันนี้แล้ว` : ""].filter(Boolean).join(" · ");
+    $("dlg").close(); toast(msg);
     S.sel.clear(); await refresh();
   } catch (ex) { $("derr").textContent = ex.message; $("derr").hidden = false; }
   $("dOk").disabled = false;
@@ -279,27 +290,27 @@ async function openHist(t) {
   try { d = await api(`/api/records?${qs}`); } catch (e) { return toast(e.message); }
   const pass = d.score >= S.me.pass_min;
   $("hHead").innerHTML = `${ring(d.score)}<div><b>${esc(d.student.name)}</b><span class="muted">${esc(t.grade)}/${esc(t.room)} · เลขที่ ${d.student.number ?? "-"} · <span class="${pass ? "good" : "bad"}">${pass ? "ผ่าน" : "ไม่ผ่าน"}</span></span></div>`;
-  const today = [...new Set(d.records.filter((r) => !r.cancelled_at && r.points < 0 && r.incident_date === S.me.today).map((r) => r.reason))];
+  const today = [...new Set(d.records.filter((r) => !r.cancelled_at && (r.points < 0 || r.warn) && r.incident_date === S.me.today).map((r) => r.reason))];
   const dis = isOpen() ? "" : "disabled";
-  $("hAct").innerHTML = `${today.length ? `<div class="today">⚠ วันนี้ถูกตัดแล้ว: ${today.map(esc).join(", ")}</div>` : ""}${dis ? `<div class="today">🔒 ${closedMsg()}</div>` : ""}<button class="btn danger" data-k="deduct" ${dis}>− ตัดคะแนน</button><button class="btn good" data-k="add" ${dis}>+ เพิ่มคะแนน</button>`;
+  $("hAct").innerHTML = `${today.length ? `<div class="today">⚠ วันนี้ถูกตัด/ตักเตือนแล้ว: ${today.map(esc).join(", ")}</div>` : ""}${dis ? `<div class="today">🔒 ${closedMsg()}</div>` : ""}<button class="btn danger" data-k="deduct" ${dis}>− ตัดคะแนน</button><button class="btn good" data-k="add" ${dis}>+ เพิ่มคะแนน</button>`;
   $("hAct").onclick = (e) => { const b = e.target.closest("[data-k]"); if (!b) return; openAction(b.dataset.k, { ids: [t.id], grade: t.grade, room: t.room, names: [d.student.name], today: [today] }); };
   $("hBody").innerHTML = d.records.length ? d.records.map((r) => `<div class="rec ${r.cancelled_at ? "cx" : ""}">
-      <span class="pt ${r.points < 0 ? "bad" : "good"}">${r.points > 0 ? "+" : ""}${r.points}</span>
+      ${r.warn ? `<span class="pt warn">เตือน</span>` : `<span class="pt ${r.points < 0 ? "bad" : "good"}">${r.points > 0 ? "+" : ""}${r.points}</span>`}
       <span class="tx"><span class="rs">${esc(r.reason)}</span><small>${thDate(r.incident_date)} · ${esc(r.created_by_name || "")}${r.cancelled_at ? ` · ยกเลิกโดย ${esc(r.cancelled_by_name || "")}: ${esc(r.cancel_reason)}` : ""}</small></span>
-      ${r.can_cancel ? `<button class="btn ghost" data-cx="${r.id}" data-what="${esc(`${r.points > 0 ? "+" : ""}${r.points} ${r.reason}`)}">ยกเลิก</button>` : ""}
+      ${r.can_cancel ? `<button class="btn ghost" data-cx="${r.id}" data-warn="${r.warn ? 1 : ""}" data-what="${esc(r.warn ? `ตักเตือน: ${r.reason}` : `${r.points > 0 ? "+" : ""}${r.points} ${r.reason}`)}">ยกเลิก</button>` : ""}
     </div>`).join("") : `<div class="empty">ภาคเรียนนี้ยังไม่มีรายการ (${S.me.base} คะแนน)</div>`;
   if (!$("hist").open) $("hist").showModal();
 }
 $("hBody").onclick = (e) => {
   const b = e.target.closest("[data-cx]"); if (!b) return;
-  S.cancelId = b.dataset.cx; $("cxWhat").textContent = b.dataset.what; $("cxReason").value = ""; $("cxerr").hidden = true;
+  S.cancelId = b.dataset.cx; S.cancelWarn = !!b.dataset.warn; $("cxWhat").textContent = b.dataset.what; $("cxReason").value = ""; $("cxerr").hidden = true;
   $("cxDlg").showModal();
 };
 $("cxf").addEventListener("submit", async (e) => {
   if (e.submitter?.value !== "ok") return;
   e.preventDefault();
   $("cxOk").disabled = true;
-  try { await api(`/api/records/${S.cancelId}/cancel`, { method: "POST", body: { reason: $("cxReason").value } }); $("cxDlg").close(); toast("ยกเลิกแล้ว"); await refresh(); }
+  try { await api(`/api/records/${S.cancelId}/cancel`, { method: "POST", body: { reason: $("cxReason").value, warn: S.cancelWarn } }); $("cxDlg").close(); toast("ยกเลิกแล้ว"); await refresh(); }
   catch (ex) { $("cxerr").textContent = ex.message; $("cxerr").hidden = false; }
   $("cxOk").disabled = false;
 });
