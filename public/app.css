@@ -205,3 +205,4 @@ dialog.sheet h2 { margin: 0 0 .15rem; font-size: 1.25rem; font-weight: 800; }
 .presets button small.cat { display: block; font-size: .7rem; color: var(--muted); font-weight: 600; }
 .item.grp { background: #f4f5fb; font-weight: 700; font-size: .85rem; color: var(--ink2); padding: .5rem 1rem; }
 #pCat { width: 7rem; }
+.stepper.locked input { background: #eef0f6; color: var(--ink2); } .stepper.locked button { opacity: .35; cursor: not-allowed; }
