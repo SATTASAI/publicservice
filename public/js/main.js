@@ -63,55 +63,7 @@ $("lf").addEventListener("submit", async (e) => {
   $("lgo").disabled = true; $("lerr").hidden = true;
   try {
     await api("/api/auth/login", { method: "POST", body: { ...Object.fromEntries(new FormData($("lf"))), turnstile_token: window.SchoolTurnstile?.token() || "" } });
-    await // ---------- เวลาเปิดบันทึก ----------
-function paintHours() {
-  const h = S.me.hours, edit = S.me.user.is_admin;
-  $("hoursTxt").textContent = `จ.–ศ. ${h.start}–${h.end} น.`;
-  $("hoursEdit").hidden = !edit;
-  if (edit) { $("hStart").value = h.start; $("hEnd").value = h.end; $("wN").value = S.me.warn_n; }
-  $("warnTxt").textContent = S.me.warn_n ? `${S.me.warn_n} ครั้ง (เรื่องเดียวกัน/ภาคเรียน)` : "ไม่ต้องตักเตือน";
-  $("warnEdit").hidden = !edit;
-  const z = S.me.zones;
-  $("zoneTxt").textContent = `เล็กน้อย 1–${z.mid - 1} · ปานกลาง ${z.mid}–${z.high - 1} · รุนแรง ${z.high}–${z.severe - 1} · รุนแรงมาก ${z.severe}+`;
-  $("zoneEdit").hidden = !edit;
-  if (edit) { $("zMid").value = z.mid; $("zHigh").value = z.high; $("zSev").value = z.severe; }
-}
-function paintPresets() {
-  const edit = S.me.user.is_admin;
-  $("presetSec").hidden = !edit;
-  if (!edit) return;
-  $("presetList").innerHTML = S.me.presets_deduct.map((x, i) => `<div class="item"><span class="who"><b>${esc(x.reason)}</b><small>−${x.points} ${zoneTag(x.points)}</small></span><button class="btn ghost" data-del="${i}">ลบ</button></div>`).join("") || `<div class="item muted">ยังไม่มีข้อพฤติกรรม</div>`;
-}
-async function savePresets(list) {
-  try { const d = await api("/api/settings", { method: "PUT", body: { presets_deduct: list } }); S.me.presets_deduct = d.presets_deduct; paintPresets(); toast("บันทึกแล้ว"); return true; }
-  catch (e) { toast(e.message); return false; }
-}
-$("presetList").onclick = (e) => {
-  const b = e.target.closest("[data-del]"); if (!b) return;
-  const x = S.me.presets_deduct[Number(b.dataset.del)];
-  if (!confirm(`ลบ "${x.reason}"?`)) return;
-  savePresets(S.me.presets_deduct.filter((_, i) => i !== Number(b.dataset.del)));
-};
-$("pAdd").onclick = async () => {
-  const reason = $("pReason").value.trim(), points = Number($("pPoints").value);
-  if (!reason) return toast("ระบุข้อพฤติกรรม");
-  const cur = S.me.presets_deduct, list = cur.some((x) => x.reason === reason) ? cur.map((x) => (x.reason === reason ? { reason, points } : x)) : cur.concat({ reason, points });
-  if (await savePresets(list)) { $("pReason").value = ""; $("pPoints").value = "5"; }
-};
-$("zoneSave").onclick = async () => {
-  try { const d = await api("/api/settings", { method: "PUT", body: { zones: { mid: Number($("zMid").value), high: Number($("zHigh").value), severe: Number($("zSev").value) } } }); S.me.zones = d.zones; paintHours(); paintPresets(); toast("บันทึกแล้ว"); }
-  catch (e) { toast(e.message); }
-};
-$("warnSave").onclick = async () => {
-  try { const d = await api("/api/settings", { method: "PUT", body: { warn_count: Number($("wN").value) } }); S.me.warn_n = d.warn_n; paintHours(); toast("บันทึกแล้ว"); }
-  catch (e) { toast(e.message); }
-};
-$("hoursSave").onclick = async () => {
-  try { const d = await api("/api/settings", { method: "PUT", body: { start: $("hStart").value, end: $("hEnd").value } }); S.me.hours = d.hours; paintHours(); paintOpen(); toast("บันทึกเวลาแล้ว"); }
-  catch (e) { toast(e.message); }
-};
-
-boot();
+    await boot();
   } catch (ex) { $("lerr").textContent = ex.message; $("lerr").hidden = false; window.SchoolTurnstile?.reset(); }
   $("lgo").disabled = false;
 });
@@ -383,5 +335,53 @@ $("staffList").addEventListener("change", async (e) => {
   try { await api("/api/staff", { method: "PUT", body: { user_id: id, discipline: e.target.checked } }); const u = staff.find((x) => x.id === id); if (u.general) u.revoked = !e.target.checked; else u.discipline = e.target.checked; toast("บันทึกแล้ว"); renderStaff(); }
   catch (ex) { e.target.checked = !e.target.checked; toast(ex.message); }
 });
+
+// ---------- เวลาเปิดบันทึก ----------
+function paintHours() {
+  const h = S.me.hours, edit = S.me.user.is_admin;
+  $("hoursTxt").textContent = `จ.–ศ. ${h.start}–${h.end} น.`;
+  $("hoursEdit").hidden = !edit;
+  if (edit) { $("hStart").value = h.start; $("hEnd").value = h.end; $("wN").value = S.me.warn_n; }
+  $("warnTxt").textContent = S.me.warn_n ? `${S.me.warn_n} ครั้ง (เรื่องเดียวกัน/ภาคเรียน)` : "ไม่ต้องตักเตือน";
+  $("warnEdit").hidden = !edit;
+  const z = S.me.zones;
+  $("zoneTxt").textContent = `เล็กน้อย 1–${z.mid - 1} · ปานกลาง ${z.mid}–${z.high - 1} · รุนแรง ${z.high}–${z.severe - 1} · รุนแรงมาก ${z.severe}+`;
+  $("zoneEdit").hidden = !edit;
+  if (edit) { $("zMid").value = z.mid; $("zHigh").value = z.high; $("zSev").value = z.severe; }
+}
+function paintPresets() {
+  const edit = S.me.user.is_admin;
+  $("presetSec").hidden = !edit;
+  if (!edit) return;
+  $("presetList").innerHTML = S.me.presets_deduct.map((x, i) => `<div class="item"><span class="who"><b>${esc(x.reason)}</b><small>−${x.points} ${zoneTag(x.points)}</small></span><button class="btn ghost" data-del="${i}">ลบ</button></div>`).join("") || `<div class="item muted">ยังไม่มีข้อพฤติกรรม</div>`;
+}
+async function savePresets(list) {
+  try { const d = await api("/api/settings", { method: "PUT", body: { presets_deduct: list } }); S.me.presets_deduct = d.presets_deduct; paintPresets(); toast("บันทึกแล้ว"); return true; }
+  catch (e) { toast(e.message); return false; }
+}
+$("presetList").onclick = (e) => {
+  const b = e.target.closest("[data-del]"); if (!b) return;
+  const x = S.me.presets_deduct[Number(b.dataset.del)];
+  if (!confirm(`ลบ "${x.reason}"?`)) return;
+  savePresets(S.me.presets_deduct.filter((_, i) => i !== Number(b.dataset.del)));
+};
+$("pAdd").onclick = async () => {
+  const reason = $("pReason").value.trim(), points = Number($("pPoints").value);
+  if (!reason) return toast("ระบุข้อพฤติกรรม");
+  const cur = S.me.presets_deduct, list = cur.some((x) => x.reason === reason) ? cur.map((x) => (x.reason === reason ? { reason, points } : x)) : cur.concat({ reason, points });
+  if (await savePresets(list)) { $("pReason").value = ""; $("pPoints").value = "5"; }
+};
+$("zoneSave").onclick = async () => {
+  try { const d = await api("/api/settings", { method: "PUT", body: { zones: { mid: Number($("zMid").value), high: Number($("zHigh").value), severe: Number($("zSev").value) } } }); S.me.zones = d.zones; paintHours(); paintPresets(); toast("บันทึกแล้ว"); }
+  catch (e) { toast(e.message); }
+};
+$("warnSave").onclick = async () => {
+  try { const d = await api("/api/settings", { method: "PUT", body: { warn_count: Number($("wN").value) } }); S.me.warn_n = d.warn_n; paintHours(); toast("บันทึกแล้ว"); }
+  catch (e) { toast(e.message); }
+};
+$("hoursSave").onclick = async () => {
+  try { const d = await api("/api/settings", { method: "PUT", body: { start: $("hStart").value, end: $("hEnd").value } }); S.me.hours = d.hours; paintHours(); paintOpen(); toast("บันทึกเวลาแล้ว"); }
+  catch (e) { toast(e.message); }
+};
 
 boot();
