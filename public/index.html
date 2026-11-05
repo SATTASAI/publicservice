@@ -45,6 +45,7 @@
   <nav class="nav" id="nav">
     <button data-tab="overview" id="navOverview" hidden><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3zm0 8h8v-6H3zm10 0h8V11h-8zm0-18v6h8V3z"/></svg><span>ภาพรวม</span></button>
     <button data-tab="room"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3m-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3m0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13m8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5"/></svg><span>ห้องเรียน</span></button>
+    <button data-tab="stats"><svg viewBox="0 0 24 24"><path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/></svg><span>สถิติ</span></button>
     <button data-tab="staff" id="navStaff" hidden><svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm-2 16-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9z"/></svg><span>ฝ่ายปกครอง</span></button>
     <button data-tab="me"><svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4m0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4"/></svg><span>บัญชี</span></button>
   </nav>
@@ -72,6 +73,27 @@
       <div class="listhead"><span class="muted" id="listInfo"></span><button class="link" id="selAll">เลือกทั้งหมด</button></div>
       <div class="empty" id="empty" hidden></div>
       <div class="cards" id="list"></div>
+    </section>
+
+    <!-- สถิติการตัด/เพิ่มคะแนน -->
+    <section id="stats" class="page" hidden>
+      <div class="chips-scroll" id="tRooms"></div>
+      <div class="group"><div class="item"><span class="hours">ตั้งแต่ <input type="date" id="tFrom" aria-label="ตั้งแต่วันที่"> ถึง <input type="date" id="tTo" aria-label="ถึงวันที่"></span><button class="btn ghost" id="tClear">ทั้งภาค</button></div></div>
+      <div class="hero" id="tHero"></div>
+      <h3 class="sec">แนวโน้ม <small id="tTrendLbl"></small></h3>
+      <div class="group pad" id="tTrend"></div>
+      <h3 class="sec">พฤติกรรมที่ถูกตัดบ่อย</h3>
+      <div class="group" id="tReasonD"></div>
+      <h3 class="sec">ตักเตือนบ่อย</h3>
+      <div class="group" id="tReasonW"></div>
+      <h3 class="sec">เพิ่มคะแนน</h3>
+      <div class="group" id="tReasonA"></div>
+      <div id="tRoomSec"><h3 class="sec">รายห้อง</h3><div class="group" id="tByRoom"></div></div>
+      <h3 class="sec">นักเรียนที่ถูกตัดมากที่สุด</h3>
+      <div class="group" id="tTopD"></div>
+      <h3 class="sec">นักเรียนที่ได้เพิ่มคะแนนมากที่สุด</h3>
+      <div class="group" id="tTopA"></div>
+      <button class="btn primary block lg" id="tCsv">⬇ ดาวน์โหลด Excel (CSV)</button>
     </section>
 
     <!-- ครูฝ่ายปกครอง (ผู้ดูแล) -->

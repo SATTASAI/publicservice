@@ -206,3 +206,17 @@ dialog.sheet h2 { margin: 0 0 .15rem; font-size: 1.25rem; font-weight: 800; }
 .item.grp { background: #f4f5fb; font-weight: 700; font-size: .85rem; color: var(--ink2); padding: .5rem 1rem; }
 #pCat { width: 7rem; }
 .stepper.locked input { background: #eef0f6; color: var(--ink2); } .stepper.locked button { opacity: .35; cursor: not-allowed; }
+
+/* สถิติ */
+.group.pad { padding: .9rem .9rem .6rem; }
+.trend { display: flex; align-items: flex-end; gap: 3px; height: 140px; overflow-x: auto; }
+.trend .col { flex: 1 0 14px; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; height: 100%; gap: 1px; }
+.trend .col i { display: block; border-radius: 3px 3px 0 0; min-height: 0; }
+.trend .d { background: var(--bad); } .trend .a { background: var(--good); } .trend .w { background: var(--warn); }
+.trend-x { display: flex; justify-content: space-between; color: var(--muted); font-size: .74rem; margin-top: .3rem; }
+.legend { display: flex; gap: .8rem; font-size: .78rem; color: var(--muted); margin-top: .35rem; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: .25rem; vertical-align: -1px; }
+.statrow { display: grid; grid-template-columns: 1fr auto; gap: .2rem .6rem; align-items: center; }
+.statrow .sbar { grid-column: 1 / -1; height: 5px; border-radius: 3px; background: #edf0f5; overflow: hidden; }
+.statrow .sbar i { display: block; height: 100%; border-radius: 3px; }
+.statrow .num { font-weight: 800; white-space: nowrap; }

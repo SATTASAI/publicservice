@@ -20,7 +20,7 @@ const PRESETS = {
 const ZONE_NAMES = ["เล็กน้อย", "ปานกลาง", "รุนแรง", "รุนแรงมาก"];
 function zoneOf(p) { const z = S.me?.zones || { mid: 6, high: 10, severe: 16 }; p = Math.abs(p); return p >= z.severe ? 3 : p >= z.high ? 2 : p >= z.mid ? 1 : 0; }
 const zoneTag = (p) => { const i = zoneOf(p); return `<span class="tag z${i}">${ZONE_NAMES[i]}</span>`; };
-const TITLES = { overview: "ภาพรวมโรงเรียน", room: "ห้องเรียน", staff: "ครูฝ่ายปกครอง", me: "บัญชี" };
+const TITLES = { overview: "ภาพรวมโรงเรียน", room: "ห้องเรียน", stats: "สถิติคะแนน", staff: "ครูฝ่ายปกครอง", me: "บัญชี" };
 
 const S = { me: null, year: null, term: 1, tab: null, room: null, students: [], sel: new Set(), ov: null, action: null, hist: null };
 const ringCls = (score) => (score < (S.me?.pass_min ?? 50) ? "low" : score < 70 ? "mid" : "");
@@ -73,12 +73,13 @@ document.querySelectorAll("#nav button").forEach((b) => (b.onclick = () => go(b.
 function go(tab) {
   S.tab = tab;
   document.querySelectorAll("#nav button").forEach((x) => x.classList.toggle("on", x.dataset.tab === tab));
-  for (const id of ["overview", "room", "staff", "me"]) $(id).hidden = id !== tab;
+  for (const id of ["overview", "room", "stats", "staff", "me"]) $(id).hidden = id !== tab;
   $("pageTitle").textContent = TITLES[tab];
   clearSel();
   window.scrollTo(0, 0);
   if (tab === "overview") loadOverview();
   if (tab === "room") { fillRoomChips(); loadRoom(); }
+  if (tab === "stats") { fillStatRooms(); loadStats(); }
   if (tab === "staff") loadStaff();
   paintPeriod(); paintOpen();
 }
@@ -89,7 +90,7 @@ function yearLabel() { const y = S.me.years.find((x) => x.id === S.year) || S.me
 function paintPeriod() {
   const t = `ภาค ${S.term}/${yearLabel()}`;
   $("period").textContent = t; $("mePeriod").textContent = `ภาคเรียนที่ ${S.term} ปีการศึกษา ${yearLabel()}`;
-  $("pageSub").textContent = S.tab === "room" && S.room ? `ชั้น ${S.room.grade}/${S.room.room} · ${t}` : S.tab === "overview" ? `ป.1–ป.6 · ${t}` : "โรงเรียนบ้านป่าเด็ง";
+  $("pageSub").textContent = S.tab === "room" && S.room ? `ชั้น ${S.room.grade}/${S.room.room} · ${t}` : S.tab === "overview" ? `ป.1–ป.6 · ${t}` : S.tab === "stats" ? `${S.stRoom ? `ชั้น ${S.stRoom}` : S.me.user.is_discipline ? "ทั้งโรงเรียน" : "ห้องที่ดูแล"} · ${t}` : "โรงเรียนบ้านป่าเด็ง";
 }
 const openPeriod = () => { fillYears(); paintSeg(); $("periodDlg").showModal(); };
 $("period").onclick = openPeriod; $("openPeriod").onclick = openPeriod;
@@ -308,6 +309,7 @@ $("df").addEventListener("submit", async (e) => {
 async function refresh() {
   if (S.tab === "room") await loadRoom();
   if (S.tab === "overview") await loadOverview();
+  if (S.tab === "stats") await loadStats();
   if (S.hist && $("hist").open) await openHist(S.hist);
 }
 
@@ -344,6 +346,66 @@ $("cxf").addEventListener("submit", async (e) => {
   $("cxOk").disabled = false;
 });
 $("hClose").onclick = () => $("hist").close();
+
+// ---------- สถิติ ----------
+S.stRoom = "";
+function fillStatRooms() {
+  const rooms = S.me.rooms;
+  if (S.stRoom && !rooms.some((r) => `${r.grade_level}/${r.classroom}` === S.stRoom)) S.stRoom = "";
+  $("tRooms").hidden = rooms.length < 2;
+  $("tRooms").innerHTML = [`<button data-k="" class="${S.stRoom ? "" : "on"}">${S.me.user.is_discipline ? "ทั้งโรงเรียน" : "ทุกห้อง"}</button>`,
+    ...rooms.map((r) => { const k = `${r.grade_level}/${r.classroom}`; return `<button data-k="${esc(k)}" class="${k === S.stRoom ? "on" : ""}">${esc(k)}</button>`; })].join("");
+}
+$("tRooms").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.stRoom = b.dataset.k; fillStatRooms(); paintPeriod(); loadStats(); };
+$("tFrom").onchange = $("tTo").onchange = () => loadStats();
+$("tClear").onclick = () => { $("tFrom").value = $("tTo").value = ""; loadStats(); };
+function statQS() {
+  const p = new URLSearchParams({ year: S.year, term: S.term });
+  if ($("tFrom").value) p.set("from", $("tFrom").value);
+  if ($("tTo").value) p.set("to", $("tTo").value);
+  if (S.stRoom) { const [g, r] = S.stRoom.split("/"); p.set("grade", g); p.set("room", r); }
+  return p.toString();
+}
+$("tCsv").onclick = () => { const a = document.createElement("a"); a.href = `/api/stats?${statQS()}&format=csv`; a.download = ""; document.body.appendChild(a); a.click(); a.remove(); };
+const statRows = (list, fmt, color, empty = "ไม่มีข้อมูล") => {
+  const max = Math.max(1, ...list.map((x) => x.v));
+  return list.length ? list.map((x) => `<div class="item statrow"><span class="who"><b>${x.label}</b>${x.sub ? `<small>${x.sub}</small>` : ""}</span><span class="num ${color}">${fmt(x)}</span><span class="sbar"><i style="width:${(x.v / max) * 100}%;background:var(--${color})"></i></span></div>`).join("")
+    : `<div class="item muted">${empty}</div>`;
+};
+async function loadStats() {
+  $("tHero").innerHTML = `<div class="lbl">กำลังโหลด…</div>`;
+  let d;
+  try { d = await api(`/api/stats?${statQS()}`); } catch (e) { $("tHero").innerHTML = `<div class="lbl">${esc(e.message)}</div>`; return; }
+  const m = d.summary, range = d.from || d.to ? `${d.from ? thDate(d.from) : "ต้นภาค"} – ${d.to ? thDate(d.to) : "ปัจจุบัน"}` : "ทั้งภาคเรียน";
+  $("tHero").innerHTML = `<div class="lbl">${S.stRoom ? `ชั้น ${esc(S.stRoom)}` : d.scope.school ? "ทั้งโรงเรียน" : "ห้องที่ดูแล"} · ${range} · ${d.scope.students} คน</div>
+    <div class="big">−${m.deduct_points}<small> คะแนน · +${m.add_points} คะแนน</small></div>
+    <div class="grid"><div><b>${m.deduct_n}</b><span>ครั้งที่ตัด (${m.deduct_students} คน)</span></div><div><b>${m.add_n}</b><span>ครั้งที่เพิ่ม (${m.add_students} คน)</span></div><div><b>${m.warn_n}</b><span>ตักเตือน</span></div></div>`;
+  // แนวโน้ม: ≤ 31 วัน รายวัน · มากกว่านั้น รายสัปดาห์ (เริ่มวันจันทร์)
+  let t = d.trend.filter((x) => x.date);
+  const weekly = t.length > 1 && (new Date(t[t.length - 1].date) - new Date(t[0].date)) / 864e5 > 31;
+  if (weekly) {
+    const m2 = new Map();
+    for (const x of t) { const dt = new Date(x.date + "T00:00:00Z"); dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7)); const k = dt.toISOString().slice(0, 10);
+      const o = m2.get(k) || { date: k, deduct: 0, add: 0, warn: 0 }; o.deduct += x.deduct; o.add += x.add; o.warn += x.warn; m2.set(k, o); }
+    t = [...m2.values()];
+  }
+  $("tTrendLbl").textContent = t.length ? (weekly ? "(รายสัปดาห์)" : "(รายวัน)") : "";
+  const tmax = Math.max(1, ...t.map((x) => x.deduct + x.add + x.warn));
+  $("tTrend").innerHTML = t.length ? `<div class="trend">${t.map((x) => `<div class="col" title="${thDate(x.date)}${weekly ? " (สัปดาห์)" : ""} · ตัด ${x.deduct} · เพิ่ม ${x.add} · เตือน ${x.warn}">
+      <i class="w" style="height:${(x.warn / tmax) * 100}%"></i><i class="a" style="height:${(x.add / tmax) * 100}%"></i><i class="d" style="height:${(x.deduct / tmax) * 100}%"></i></div>`).join("")}</div>
+    <div class="trend-x"><span>${thDate(t[0].date)}</span><span>${thDate(t[t.length - 1].date)}</span></div>
+    <div class="legend"><span><i class="d" style="background:var(--bad)"></i>คะแนนที่ตัด</span><span><i style="background:var(--good)"></i>คะแนนที่เพิ่ม</span><span><i style="background:var(--warn)"></i>ครั้งที่ตักเตือน</span></div>`
+    : `<div class="muted">ไม่มีข้อมูลในช่วงนี้</div>`;
+  const rs = (list) => list.map((x) => ({ label: esc(x.reason), sub: `${x.students} คน`, v: x.n, n: x.n, points: x.points }));
+  $("tReasonD").innerHTML = statRows(rs(d.by_reason_deduct).map((x) => ({ ...x, label: x.label + zoneTag(x.points / x.n) })), (x) => `${x.n} ครั้ง · −${x.points}`, "bad");
+  $("tReasonW").innerHTML = statRows(rs(d.by_reason_warn), (x) => `${x.n} ครั้ง`, "warn");
+  $("tReasonA").innerHTML = statRows(rs(d.by_reason_add), (x) => `${x.n} ครั้ง · +${x.points}`, "good");
+  $("tRoomSec").hidden = d.by_room.length < 2;
+  $("tByRoom").innerHTML = statRows(d.by_room.map((r) => ({ label: `${esc(r.grade)}/${esc(r.room)}`, sub: `ตัด ${r.deduct_n} ครั้ง · เพิ่ม ${r.add_n} ครั้ง (+${r.add_points}) · เตือน ${r.warn_n}`, v: r.deduct_points, r })), (x) => `−${x.r.deduct_points}`, "bad");
+  const stu = (list, key) => list.map((s) => ({ label: `${esc(s.name)}`, sub: `${esc(s.grade)}/${esc(s.room)} · เลขที่ ${s.number ?? "-"} · ตัด ${s.deduct_n} · เพิ่ม ${s.add_n} · เตือน ${s.warn_n}`, v: s[key], s }));
+  $("tTopD").innerHTML = statRows(stu(d.top_deduct, "deduct_points"), (x) => `−${x.s.deduct_points}`, "bad");
+  $("tTopA").innerHTML = statRows(stu(d.top_add, "add_points"), (x) => `+${x.s.add_points}`, "good");
+}
 
 // ---------- ครูฝ่ายปกครอง ----------
 let staff = [], canOverride = false;
