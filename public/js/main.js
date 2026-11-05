@@ -306,27 +306,29 @@ $("cxf").addEventListener("submit", async (e) => {
 $("hClose").onclick = () => $("hist").close();
 
 // ---------- ครูฝ่ายปกครอง ----------
-let staff = [];
+let staff = [], canOverride = false;
 async function loadStaff() {
-  try { staff = (await api("/api/staff")).users; } catch (e) { return toast(e.message); }
+  try { ({ users: staff, can_override: canOverride } = await api("/api/staff")); } catch (e) { return toast(e.message); }
   renderStaff();
 }
 function renderStaff() {
   const q = $("sq").value.trim();
   const admin = (u) => ["superadmin", "executive"].includes(u.role);
+  const on = (u) => admin(u) || (u.general && !u.revoked) || (!u.general && u.discipline);
   const list = staff.filter((u) => !q || u.full_name.includes(q))
-    .sort((a, b) => (admin(b) || b.general || b.discipline) - (admin(a) || a.general || a.discipline) || a.full_name.localeCompare(b.full_name, "th"));
+    .sort((a, b) => on(b) - on(a) || a.full_name.localeCompare(b.full_name, "th"));
   $("staffList").innerHTML = list.map((u) => {
-    const auto = admin(u) || u.general;
-    const note = admin(u) ? "ผู้ดูแลระบบ/ผู้บริหาร · ทุกห้องอยู่แล้ว" : u.general ? "ฝ่ายบริหารทั่วไป · อัตโนมัติ" : u.discipline ? "กำหนดเอง" : "ครูประจำชั้น (เฉพาะห้องของตน)";
+    const locked = admin(u) || (u.general && !canOverride);
+    const note = admin(u) ? "ผู้ดูแลระบบ/ผู้บริหาร · ทุกห้องอยู่แล้ว" : u.general ? (u.revoked ? "ฝ่ายบริหารทั่วไป · Superadmin ปิดสิทธิ์" : "ฝ่ายบริหารทั่วไป · อัตโนมัติ")
+      : u.discipline ? "กำหนดเอง" : "ครูประจำชั้น (เฉพาะห้องของตน)";
     return `<div class="item"><span class="who"><b>${esc(u.full_name)}</b><small>${note}</small></span>
-      <label class="switch"><input type="checkbox" data-u="${u.id}" ${auto || u.discipline ? "checked" : ""} ${auto ? "disabled" : ""} aria-label="ฝ่ายปกครอง ${esc(u.full_name)}"><i></i></label></div>`;
+      <label class="switch"><input type="checkbox" data-u="${u.id}" ${on(u) ? "checked" : ""} ${locked ? "disabled" : ""} aria-label="ฝ่ายปกครอง ${esc(u.full_name)}"><i></i></label></div>`;
   }).join("") || `<div class="item muted">ไม่พบ</div>`;
 }
 $("sq").oninput = renderStaff;
 $("staffList").addEventListener("change", async (e) => {
   const id = Number(e.target.dataset.u); if (!id) return;
-  try { await api("/api/staff", { method: "PUT", body: { user_id: id, discipline: e.target.checked } }); staff.find((u) => u.id === id).discipline = e.target.checked; toast("บันทึกแล้ว"); renderStaff(); }
+  try { await api("/api/staff", { method: "PUT", body: { user_id: id, discipline: e.target.checked } }); const u = staff.find((x) => x.id === id); if (u.general) u.revoked = !e.target.checked; else u.discipline = e.target.checked; toast("บันทึกแล้ว"); renderStaff(); }
   catch (ex) { e.target.checked = !e.target.checked; toast(ex.message); }
 });
 
