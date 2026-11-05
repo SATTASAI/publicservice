@@ -199,3 +199,9 @@ dialog.sheet h2 { margin: 0 0 .15rem; font-size: 1.25rem; font-weight: 800; }
 .hours input[type=number] { width: 4.2rem; }
 #zoneEdit { flex-wrap: wrap; gap: .5rem; } #zoneEdit .hours { flex-wrap: wrap; }
 #pReason { flex: 1; min-width: 0; } #presetSec .hours { flex: 1; min-width: 0; }
+/* เลือกข้อพฤติกรรม: ค้นหา + แท็บหมวด */
+#pPick { margin-top: .6rem; } #pPick .search.mini { margin: 0 0 .5rem; box-shadow: none; border: 1.5px solid var(--line); } #pPick .chips-scroll { margin-bottom: 0; }
+#dPresets { max-height: 42vh; overflow-y: auto; align-content: flex-start; }
+.presets button small.cat { display: block; font-size: .7rem; color: var(--muted); font-weight: 600; }
+.item.grp { background: #f4f5fb; font-weight: 700; font-size: .85rem; color: var(--ink2); padding: .5rem 1rem; }
+#pCat { width: 7rem; }
