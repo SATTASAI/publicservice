@@ -19,6 +19,9 @@ const STATEMENTS = [
     user_id INTEGER PRIMARY KEY,
     role TEXT NOT NULL CHECK (role IN ('discipline')),
     assigned_by INTEGER, assigned_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  // Superadmin ปิดสิทธิ์ฝ่ายปกครองอัตโนมัติของครูฝ่ายบริหารทั่วไปรายคน
+  `CREATE TABLE IF NOT EXISTS ps_staff_revoked (
+    user_id INTEGER PRIMARY KEY, revoked_by INTEGER, revoked_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS ps_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, detail TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')))`,

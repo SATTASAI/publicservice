@@ -1,5 +1,5 @@
 // บันทึกคะแนนพฤติกรรม: ครูประจำชั้น (ห้องของตน) · ครูฝ่ายปกครองและผู้ดูแลระบบ/ผู้บริหาร (ทุกห้อง)
-import { json, readJson, fail, requireUser, requireAdmin, intParam, text, GENERAL_DEPT_SQL } from "../lib/http.js";
+import { json, readJson, fail, requireUser, requireAdmin, intParam, text, GENERAL_DEPT_SQL, ADMIN_ROLES } from "../lib/http.js";
 import { listYears, resolveYear, yearTerms, currentTerm, listRooms, roomRoster, studentName, isPrimaryGrade, compareRoom, LEFT_STATUSES, thaiToday } from "../lib/roster.js";
 import { BASE_SCORE, PASS_MIN, foldScore } from "../lib/schema.js";
 
@@ -232,21 +232,33 @@ export async function handleSettings(request, env, user, method) {
   fail(405, "ไม่รองรับ");
 }
 
-// ครูฝ่ายปกครอง: ผู้ดูแลระบบ/ผู้บริหารกำหนด
+// ครูฝ่ายปกครอง: ผู้ดูแลระบบ/ผู้บริหารกำหนด · ครูฝ่ายบริหารทั่วไป (อัตโนมัติ) แก้ได้เฉพาะ Superadmin
 export async function handleStaff(request, env, user, method) {
   requireAdmin(user);
   if (method === "GET") {
     const { results } = await env.DB.prepare(
-      `SELECT u.id, u.full_name, u.role, r.role AS ps_role, ${GENERAL_DEPT_SQL} AS in_general FROM users u LEFT JOIN ps_staff_roles r ON r.user_id = u.id
+      `SELECT u.id, u.full_name, u.role, r.role AS ps_role, ${GENERAL_DEPT_SQL} AS in_general,
+              EXISTS (SELECT 1 FROM ps_staff_revoked x WHERE x.user_id = u.id) AS revoked
+         FROM users u LEFT JOIN ps_staff_roles r ON r.user_id = u.id
         WHERE u.status = 'active' AND u.deleted_at IS NULL AND u.role IS NOT NULL ORDER BY u.full_name`
     ).all();
-    return json({ users: results.map((u) => ({ id: u.id, full_name: u.full_name, role: u.role, discipline: u.ps_role === "discipline", general: Number(u.in_general) === 1 })) });
+    return json({ can_override: user.is_superadmin, users: results.map((u) => ({ id: u.id, full_name: u.full_name, role: u.role,
+      discipline: u.ps_role === "discipline", general: Number(u.in_general) === 1, revoked: Number(u.revoked) === 1 })) });
   }
   if (method === "PUT") {
     const b = await readJson(request);
     const uid = intParam(b.user_id, "รหัสผู้ใช้");
-    if (!(await env.DB.prepare("SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL").bind(uid).first())) fail(404, "ไม่พบผู้ใช้");
-    if (b.discipline) {
+    const target = await env.DB.prepare(`SELECT u.id, u.role, ${GENERAL_DEPT_SQL} AS in_general FROM users u WHERE u.id = ? AND u.deleted_at IS NULL`).bind(uid).first();
+    if (!target) fail(404, "ไม่พบผู้ใช้");
+    if (ADMIN_ROLES.includes(target.role)) fail(400, "ผู้ดูแลระบบ/ผู้บริหารเห็นทุกห้องอยู่แล้ว");
+    if (Number(target.in_general) === 1) {
+      // ครูฝ่ายบริหารทั่วไป: สิทธิ์อัตโนมัติ — เฉพาะ Superadmin ปิด/เปิดได้
+      if (!user.is_superadmin) fail(403, "เฉพาะ Superadmin แก้สิทธิ์ครูฝ่ายบริหารทั่วไปได้");
+      await env.DB.batch(b.discipline
+        ? [env.DB.prepare("DELETE FROM ps_staff_revoked WHERE user_id = ?").bind(uid)]
+        : [env.DB.prepare("DELETE FROM ps_staff_roles WHERE user_id = ?").bind(uid),
+           env.DB.prepare("INSERT INTO ps_staff_revoked (user_id, revoked_by) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET revoked_by = excluded.revoked_by, revoked_at = datetime('now')").bind(uid, user.id)]);
+    } else if (b.discipline) {
       await env.DB.prepare("INSERT INTO ps_staff_roles (user_id, role, assigned_by) VALUES (?, 'discipline', ?) ON CONFLICT(user_id) DO UPDATE SET role = 'discipline', assigned_by = excluded.assigned_by, assigned_at = datetime('now')").bind(uid, user.id).run();
     } else {
       await env.DB.prepare("DELETE FROM ps_staff_roles WHERE user_id = ?").bind(uid).run();
