@@ -231,13 +231,33 @@ function openAction(kind, target) {
   $("dWarn").textContent = `เรื่องเดียวกันต้องตักเตือนครบ ${wn} ครั้งในภาคเรียนก่อน จึงตัดคะแนนได้ — ถ้ายังไม่ครบ ระบบบันทึกเป็น "ตักเตือน" (ไม่ตัดคะแนน) · โซนรุนแรงขึ้นไป (หัก ${S.me.zones.high} ขึ้นไป) ตัดได้ทันที`;
   // ตัด/ตักเตือนเรื่องเดียวกันได้วันละครั้ง — บอกจำนวนคนที่บันทึกเรื่องนั้นวันนี้แล้ว
   const doneN = (r) => kind === "deduct" ? (target.today || []).filter((t) => t.includes(r)).length : 0;
-  const presets = kind === "deduct" ? S.me.presets_deduct.map((x) => [x.reason, x.points]) : PRESETS.add;
-  $("dPresets").innerHTML = presets.map(([r, p]) => { const n = doneN(r), all = n && n === target.ids.length;
-    return `<button type="button" data-r="${esc(r)}" data-p="${p}" ${all ? "disabled" : ""} class="${n ? "done" : ""}">${esc(r)}<b class="${kind === "deduct" ? "bad" : "good"}">${kind === "deduct" ? "−" : "+"}${p}</b>${kind === "deduct" ? zoneTag(p) : ""}${n ? `<small>${all ? "บันทึกแล้ววันนี้" : `บันทึกแล้ว ${n} คน`}</small>` : ""}</button>`; }).join("");
-  $("dReason").value = ""; $("dAmount").value = "5"; paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
+  S.action.doneN = doneN; S.action.cat = ""; $("pq").value = "";
+  // แท็บหมวด + ค้นหา (เฉพาะตัดคะแนน)
+  const cats = kind === "deduct" ? [...new Set(S.me.presets_deduct.map((x) => x.cat || "อื่น ๆ"))] : [];
+  $("pPick").hidden = !cats.length;
+  $("pCats").innerHTML = cats.length ? [`<button type="button" data-c="" class="on">ทั้งหมด</button>`, ...cats.map((c) => `<button type="button" data-c="${esc(c)}">${esc(c)}</button>`)].join("") : "";
+  $("dReason").value = "";
+  paintPresetBtns(); $("dAmount").value = "5"; paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
   $("dOk").className = `btn lg ${kind === "deduct" ? "danger" : "good"}`;
   $("dlg").showModal();
 }
+function paintPresetBtns() {
+  const a = S.action, kind = a.kind, q = $("pq").value.trim();
+  let list = kind === "deduct" ? S.me.presets_deduct.map((x) => [x.reason, x.points, x.cat || "อื่น ๆ"]) : PRESETS.add.map(([r, p]) => [r, p, ""]);
+  if (q) list = list.filter(([r]) => r.includes(q));
+  else if (a.cat) list = list.filter((x) => x[2] === a.cat);
+  const cur = $("dReason").value;
+  $("dPresets").innerHTML = list.map(([r, p, c]) => { const n = a.doneN(r), all = n && n === a.ids.length;
+    return `<button type="button" data-r="${esc(r)}" data-p="${p}" ${all ? "disabled" : ""} class="${n ? "done" : ""} ${r === cur ? "on" : ""}">${esc(r)}<b class="${kind === "deduct" ? "bad" : "good"}">${kind === "deduct" ? "−" : "+"}${p}</b>${kind === "deduct" ? zoneTag(p) : ""}${q && c ? `<small class="cat">${esc(c)}</small>` : ""}${n ? `<small>${all ? "บันทึกแล้ววันนี้" : `บันทึกแล้ว ${n} คน`}</small>` : ""}</button>`; }).join("") || `<div class="muted">ไม่พบข้อพฤติกรรม — พิมพ์เหตุผลเองด้านล่างได้</div>`;
+}
+$("pCats").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  S.action.cat = b.dataset.c; $("pq").value = "";
+  $("pCats").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  paintPresetBtns();
+};
+$("pq").oninput = () => paintPresetBtns();
+$("pq").onkeydown = (e) => { if (e.key === "Enter") e.preventDefault(); };
 $("dPresets").onclick = (e) => {
   const b = e.target.closest("button"); if (!b) return;
   $("dPresets").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
@@ -352,7 +372,10 @@ function paintPresets() {
   const edit = S.me.user.is_admin;
   $("presetSec").hidden = !edit;
   if (!edit) return;
-  $("presetList").innerHTML = S.me.presets_deduct.map((x, i) => `<div class="item"><span class="who"><b>${esc(x.reason)}</b><small>−${x.points} ${zoneTag(x.points)}</small></span><button class="btn ghost" data-del="${i}">ลบ</button></div>`).join("") || `<div class="item muted">ยังไม่มีข้อพฤติกรรม</div>`;
+  const list = S.me.presets_deduct, cats = [...new Set(list.map((x) => x.cat || "อื่น ๆ"))];
+  $("presetList").innerHTML = cats.map((c) => `<div class="item grp">${esc(c)}</div>` + list.map((x, i) => [x, i]).filter(([x]) => (x.cat || "อื่น ๆ") === c)
+    .map(([x, i]) => `<div class="item"><span class="who"><b>${esc(x.reason)}</b><small>−${x.points} ${zoneTag(x.points)}</small></span><button class="btn ghost" data-del="${i}">ลบ</button></div>`).join("")).join("") || `<div class="item muted">ยังไม่มีข้อพฤติกรรม</div>`;
+  $("pCatList").innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join("");
 }
 async function savePresets(list) {
   try { const d = await api("/api/settings", { method: "PUT", body: { presets_deduct: list } }); S.me.presets_deduct = d.presets_deduct; paintPresets(); toast("บันทึกแล้ว"); return true; }
@@ -365,9 +388,9 @@ $("presetList").onclick = (e) => {
   savePresets(S.me.presets_deduct.filter((_, i) => i !== Number(b.dataset.del)));
 };
 $("pAdd").onclick = async () => {
-  const reason = $("pReason").value.trim(), points = Number($("pPoints").value);
+  const reason = $("pReason").value.trim(), points = Number($("pPoints").value), cat = $("pCat").value.trim() || "อื่น ๆ";
   if (!reason) return toast("ระบุข้อพฤติกรรม");
-  const cur = S.me.presets_deduct, list = cur.some((x) => x.reason === reason) ? cur.map((x) => (x.reason === reason ? { reason, points } : x)) : cur.concat({ reason, points });
+  const cur = S.me.presets_deduct, list = cur.some((x) => x.reason === reason) ? cur.map((x) => (x.reason === reason ? { reason, points, cat } : x)) : cur.concat({ reason, points, cat });
   if (await savePresets(list)) { $("pReason").value = ""; $("pPoints").value = "5"; }
 };
 $("zoneSave").onclick = async () => {
