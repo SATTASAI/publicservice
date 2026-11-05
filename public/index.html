@@ -89,6 +89,8 @@
         <div class="item"><span>ส่งผลไป</span><span class="muted">ปพ.6 กิจกรรมเพื่อสังคมฯ อัตโนมัติ</span></div>
         <div class="item"><span>เวลาเปิดบันทึก</span><span class="muted" id="hoursTxt"></span></div>
         <div class="item" id="hoursEdit" hidden><span class="hours"><input type="time" id="hStart" aria-label="เวลาเปิด"> – <input type="time" id="hEnd" aria-label="เวลาปิด"></span><button class="btn primary" id="hoursSave">บันทึก</button></div>
+        <div class="item"><span>ตักเตือนก่อนตัดคะแนน</span><span class="muted" id="warnTxt"></span></div>
+        <div class="item" id="warnEdit" hidden><span class="hours"><input type="number" id="wN" min="0" max="10" inputmode="numeric" aria-label="จำนวนครั้งตักเตือน"> ครั้ง <small class="muted">(0 = ตัดได้ทันที)</small></span><button class="btn primary" id="warnSave">บันทึก</button></div>
         <button class="item" id="openPeriod"><span>ปีการศึกษา / ภาคเรียน</span><span class="muted" id="mePeriod"></span></button>
       </div>
       <button class="btn danger-soft block lg" id="logout">ออกจากระบบ</button>
@@ -118,6 +120,7 @@
     <div class="grab"></div>
     <h2 id="dTitle"></h2>
     <p class="muted" id="dWho"></p>
+    <div class="info warn" id="dWarn" hidden></div>
     <div class="presets" id="dPresets"></div>
     <label class="field">เหตุผล<input name="reason" id="dReason" required maxlength="300" placeholder="เลือกด้านบน หรือพิมพ์เอง"></label>
     <div class="field">จำนวนคะแนน

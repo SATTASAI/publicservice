@@ -28,6 +28,19 @@ const STATEMENTS = [
   // ตั้งค่าระบบ (key/value) เช่น เวลาเปิด-ปิดการบันทึก
   `CREATE TABLE IF NOT EXISTS ps_settings (key TEXT PRIMARY KEY, value TEXT, updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_ps_behavior_day ON ps_behavior_records(student_id, incident_date)`,
+  // ตักเตือนก่อนตัดคะแนน (ไม่มีคะแนน — students-report ไม่อ่านตารางนี้) · เรื่องเดียวกันต้องเตือนครบตามที่ตั้งค่าในภาคเรียนจึงตัดได้
+  `CREATE TABLE IF NOT EXISTS ps_behavior_warnings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    academic_year_id INTEGER NOT NULL,
+    term_number INTEGER NOT NULL CHECK (term_number IN (1, 2)),
+    student_id INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    incident_date TEXT,
+    created_by INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    cancelled_at TEXT, cancelled_by INTEGER, cancel_reason TEXT)`,
+  `CREATE INDEX IF NOT EXISTS idx_ps_warn_student ON ps_behavior_warnings(academic_year_id, student_id, term_number)`,
+  `CREATE INDEX IF NOT EXISTS idx_ps_warn_day ON ps_behavior_warnings(student_id, incident_date)`,
 ];
 
 const ready = new WeakMap();

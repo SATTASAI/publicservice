@@ -158,6 +158,7 @@ dialog.sheet h2 { margin: 0 0 .15rem; font-size: 1.25rem; font-weight: 800; }
 .rec { display: flex; gap: .75rem; align-items: center; padding: .7rem 0; border-bottom: 1px solid var(--line); }
 .rec .pt { flex: none; width: 50px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-weight: 800; }
 .rec .pt.bad { background: var(--badsoft); } .rec .pt.good { background: var(--goodsoft); }
+.rec .pt.warn { background: var(--warnsoft); font-size: .8rem; }
 .rec .tx { flex: 1; min-width: 0; } .rec .tx small { color: var(--muted); font-size: .8rem; display: block; }
 .rec.cx { opacity: .5; } .rec.cx .rs { text-decoration: line-through; }
 .rec .btn { padding: .35rem .7rem; font-size: .85rem; }
