@@ -231,6 +231,66 @@ export async function handleOverview(request, env, user, url) {
   return json({ year, term, rooms: summary, students });
 }
 
+// GET /api/stats?year&term&from&to&grade&room[&format=csv] — สถิติการตัด/เพิ่มคะแนน (และตักเตือน)
+// ครูประจำชั้น: เฉพาะห้องของตน · ครูฝ่ายปกครอง/ผู้ดูแล: ทั้งโรงเรียน (กรองห้องได้) · ไม่นับรายการที่ยกเลิก
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+export async function handleStats(request, env, user, url) {
+  requireUser(user);
+  const q = url.searchParams;
+  const year = await resolveYear(env, q.get("year"));
+  const term = termOf(q.get("term"));
+  const from = DATE.test(q.get("from") || "") ? q.get("from") : "", to = DATE.test(q.get("to") || "") ? q.get("to") : "";
+  if (from && to && from > to) fail(400, "วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด");
+  let rooms = await editableRooms(env, user, year.id);
+  const g = text(q.get("grade"), 10), r = text(q.get("room"), 10);
+  if (g && r) { rooms = rooms.filter((x) => x.grade_level === g && x.classroom === r); if (!rooms.length) fail(403, "ดูสถิติได้เฉพาะห้องที่ท่านดูแล"); }
+  const rosters = await Promise.all(rooms.map((x) => roomRoster(env, year.id, x.grade_level, x.classroom)));
+  const who = new Map();
+  rooms.forEach((x, i) => { for (const st of rosters[i]) who.set(st.id, { id: st.id, number: st.number, code: st.student_code, name: studentName(st), grade: x.grade_level, room: x.classroom }); });
+  const cond = `academic_year_id = ? AND term_number = ? AND cancelled_at IS NULL${from ? " AND incident_date >= ?" : ""}${to ? " AND incident_date <= ?" : ""}`;
+  const args = [year.id, term, ...(from ? [from] : []), ...(to ? [to] : [])];
+  const [{ results: recs }, { results: warns }] = await Promise.all([
+    env.DB.prepare(`SELECT r.id, r.student_id, r.points, r.reason, r.incident_date, u.full_name AS by_name FROM ps_behavior_records r LEFT JOIN users u ON u.id = r.created_by WHERE ${cond.replace(/(academic_year_id|term_number|cancelled_at|incident_date)/g, "r.$1")} ORDER BY r.incident_date, r.id`).bind(...args).all(),
+    env.DB.prepare(`SELECT w.id, w.student_id, 0 AS points, w.reason, w.incident_date, u.full_name AS by_name FROM ps_behavior_warnings w LEFT JOIN users u ON u.id = w.created_by WHERE ${cond.replace(/(academic_year_id|term_number|cancelled_at|incident_date)/g, "w.$1")} ORDER BY w.incident_date, w.id`).bind(...args).all(),
+  ]);
+  const R = recs.filter((x) => who.has(x.student_id)), W = warns.filter((x) => who.has(x.student_id));
+
+  if (q.get("format") === "csv") {
+    const cell = (v) => { const t = String(v ?? ""); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const rows = [...R.map((x) => ({ ...x, kind: x.points < 0 ? "ตัด" : "เพิ่ม" })), ...W.map((x) => ({ ...x, kind: "ตักเตือน" }))]
+      .sort((a, b) => String(a.incident_date).localeCompare(String(b.incident_date)) || a.id - b.id);
+    const lines = [["วันที่", "ชั้น", "เลขที่", "เลขประจำตัว", "ชื่อ-สกุล", "ประเภท", "คะแนน", "พฤติกรรม/เหตุผล", "ผู้บันทึก"].join(",")];
+    for (const x of rows) { const s = who.get(x.student_id);
+      lines.push([x.incident_date, `${s.grade}/${s.room}`, s.number ?? "", s.code ?? "", s.name, x.kind, x.points || "", x.reason, x.by_name || ""].map(cell).join(",")); }
+    return new Response("﻿" + lines.join("\r\n"), { headers: { "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="behavior-stats-${year.year_be || year.id}-t${term}.csv"`, "Cache-Control": "no-store" } });
+  }
+
+  const sum = (a) => a.reduce((t, x) => t + Math.abs(x.points), 0);
+  const D = R.filter((x) => x.points < 0), A = R.filter((x) => x.points > 0);
+  const group = (list, key) => { const m = new Map(); for (const x of list) { const k = key(x); const o = m.get(k) || { n: 0, pts: 0, students: new Set() }; o.n++; o.pts += Math.abs(x.points); o.students.add(x.student_id); m.set(k, o); } return m; };
+  const byReason = (list) => [...group(list, (x) => x.reason)].map(([reason, o]) => ({ reason, n: o.n, points: o.pts, students: o.students.size })).sort((a, b) => b.n - a.n || b.points - a.points).slice(0, 30);
+  const roomKey = (x) => { const s = who.get(x.student_id); return `${s.grade}/${s.room}`; };
+  const gD = group(D, roomKey), gA = group(A, roomKey), gW = group(W, roomKey);
+  const by_room = rooms.map((x) => { const k = `${x.grade_level}/${x.classroom}`;
+    return { grade: x.grade_level, room: x.classroom, deduct_n: gD.get(k)?.n || 0, deduct_points: gD.get(k)?.pts || 0, add_n: gA.get(k)?.n || 0, add_points: gA.get(k)?.pts || 0, warn_n: gW.get(k)?.n || 0 }; });
+  const stu = new Map();
+  for (const x of [...R, ...W]) { const o = stu.get(x.student_id) || { ...who.get(x.student_id), deduct_n: 0, deduct_points: 0, add_n: 0, add_points: 0, warn_n: 0 };
+    if (x.points < 0) { o.deduct_n++; o.deduct_points -= x.points; } else if (x.points > 0) { o.add_n++; o.add_points += x.points; } else o.warn_n++;
+    stu.set(x.student_id, o); }
+  const all = [...stu.values()];
+  const days = new Map();
+  for (const x of [...R, ...W]) { const k = x.incident_date || ""; const o = days.get(k) || { date: k, deduct: 0, add: 0, warn: 0 };
+    if (x.points < 0) o.deduct -= x.points; else if (x.points > 0) o.add += x.points; else o.warn++; days.set(k, o); }
+  return json({ year, term, from, to, scope: { rooms: rooms.length, students: who.size, school: !!user.is_discipline && !(g && r) },
+    summary: { deduct_n: D.length, deduct_points: sum(D), add_n: A.length, add_points: sum(A), warn_n: W.length,
+      deduct_students: new Set(D.map((x) => x.student_id)).size, add_students: new Set(A.map((x) => x.student_id)).size },
+    by_reason_deduct: byReason(D), by_reason_add: byReason(A), by_reason_warn: byReason(W), by_room,
+    top_deduct: all.filter((x) => x.deduct_n).sort((a, b) => b.deduct_points - a.deduct_points || b.deduct_n - a.deduct_n).slice(0, 20),
+    top_add: all.filter((x) => x.add_n).sort((a, b) => b.add_points - a.add_points || b.add_n - a.add_n).slice(0, 20),
+    trend: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)) });
+}
+
 export async function handleRecords(request, env, user, parts, method, url) {
   requireUser(user);
   // GET /api/records?year&term&grade&room&student=ID — ประวัติของนักเรียน 1 คน
