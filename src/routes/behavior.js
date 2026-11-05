@@ -292,9 +292,13 @@ export async function handleRecords(request, env, user, parts, method, url) {
         ids = ids.filter((id) => !skipIds.includes(id));
         skipped = names;
       }
-      // ยังตักเตือนเรื่องนี้ไม่ครบตามที่ตั้งค่า → บันทึกเป็นตักเตือน (ไม่ตัดคะแนน) · โซนรุนแรงขึ้นไปตัดได้ทันที
+      // โซนปานกลางขึ้นไป (≥ mid): ครูเลือกเอง mode = "warn" (ตักเตือน) | "deduct" (ตัดคะแนนเลย)
+      // โซนเล็กน้อย: ยังตักเตือนเรื่องนี้ไม่ครบตามที่ตั้งค่า → บันทึกเป็นตักเตือน (ไม่ตัดคะแนน)
       const n = await getWarnN(env);
-      if (n > 0 && amount < (await getZones(env)).high) {
+      if (amount >= (await getZones(env)).mid) {
+        if (b.mode !== "warn" && b.mode !== "deduct") fail(400, "เลือก ตักเตือน หรือ ตัดคะแนนเลย");
+        if (b.mode === "warn") { warnIds = ids; ids = []; }
+      } else if (n > 0) {
         const wc = await warnCounts(env, year.id, term, ids, reason);
         warnIds = ids.filter((id) => (wc[id] || 0) < n);
         ids = ids.filter((id) => !warnIds.includes(id));

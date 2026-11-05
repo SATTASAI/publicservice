@@ -228,7 +228,7 @@ function openAction(kind, target) {
   $("dWho").textContent = `${target.grade}/${target.room} · ` + (names.length > 3 ? `${names.slice(0, 3).join(", ")} และอีก ${names.length - 3} คน` : names.join(", "));
   const wn = S.me.warn_n;
   $("dWarn").hidden = kind !== "deduct" || !wn;
-  $("dWarn").textContent = `เรื่องเดียวกันต้องตักเตือนครบ ${wn} ครั้งในภาคเรียนก่อน จึงตัดคะแนนได้ — ถ้ายังไม่ครบ ระบบบันทึกเป็น "ตักเตือน" (ไม่ตัดคะแนน) · โซนรุนแรงขึ้นไป (หัก ${S.me.zones.high} ขึ้นไป) ตัดได้ทันที`;
+  $("dWarn").textContent = `โซนเล็กน้อย: เรื่องเดียวกันต้องตักเตือนครบ ${wn} ครั้งในภาคเรียนก่อน จึงตัดคะแนนได้ (ยังไม่ครบ ระบบบันทึกเป็น "ตักเตือน") · โซนปานกลางขึ้นไป (หัก ${S.me.zones.mid} ขึ้นไป) เลือกเองว่าจะตักเตือนหรือตัดคะแนนเลย`;
   // ตัด/ตักเตือนเรื่องเดียวกันได้วันละครั้ง — บอกจำนวนคนที่บันทึกเรื่องนั้นวันนี้แล้ว
   const doneN = (r) => kind === "deduct" ? (target.today || []).filter((t) => t.includes(r)).length : 0;
   S.action.doneN = doneN; S.action.cat = ""; $("pq").value = "";
@@ -280,17 +280,24 @@ document.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => {
 function paintZone() {
   const show = S.action?.kind === "deduct", p = Number($("dAmount").value) || 0;
   $("dZone").hidden = !show || p < 1;
-  if (show && p >= 1) $("dZone").innerHTML = `โซน ${zoneTag(p)}${S.me.warn_n && p >= S.me.zones.high ? " · ตัดได้ทันที ไม่ต้องตักเตือน" : ""}`;
+  if (show && p >= 1) $("dZone").innerHTML = `โซน ${zoneTag(p)}`;
+  // โซนปานกลางขึ้นไป: เลือกเองว่าจะตักเตือนหรือตัดคะแนนเลย (ไม่มีค่าเริ่มต้น)
+  const choose = show && p >= S.me.zones.mid;
+  $("dModeBox").hidden = !choose;
+  if (!choose) S.action && (S.action.mode = null);
+  $("dMode").querySelectorAll("button").forEach((b) => b.classList.toggle("on", !!S.action && b.dataset.m === S.action.mode));
 }
+$("dMode").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.action.mode = b.dataset.m; paintZone(); };
 $("dAmount").oninput = paintZone;
 $("df").addEventListener("submit", async (e) => {
   if (e.submitter?.value !== "ok") return;
   e.preventDefault();
   const a = S.action;
+  if (!$("dModeBox").hidden && !a.mode) { $("derr").textContent = "เลือก ตักเตือน หรือ ตัดคะแนนเลย"; $("derr").hidden = false; return; }
   $("dOk").disabled = true;
   try {
     const res = await api("/api/records", { method: "POST", body: { year: S.year, term: S.term, grade: a.grade, room: a.room,
-      kind: a.kind, amount: Number($("dAmount").value), reason: $("dReason").value, incident_date: $("dDate").value, student_ids: a.ids } });
+      kind: a.kind, amount: Number($("dAmount").value), reason: $("dReason").value, mode: a.mode || undefined, incident_date: $("dDate").value, student_ids: a.ids } });
     const msg = [res.saved ? `${a.kind === "deduct" ? "ตัดคะแนน" : "บันทึกแล้ว"} ${res.saved} คน` : "", res.warned ? `ตักเตือน ${res.warned} คน` : "",
       res.skipped?.length ? `ข้าม ${res.skipped.length} คนที่บันทึกเรื่องนี้วันนี้แล้ว` : ""].filter(Boolean).join(" · ");
     $("dlg").close(); toast(msg);
