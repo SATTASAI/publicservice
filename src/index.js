@@ -1,5 +1,6 @@
 // ระบบคะแนนพฤติกรรมนักเรียน (กิจกรรมเพื่อสังคมและสาธารณประโยชน์) โรงเรียนบ้านป่าเด็ง
 // Worker + static assets · ใช้ D1 และบัญชีผู้ใช้ร่วมกับระบบบริหารโรงเรียน/ระบบรายงานผลการเรียน
+import {handleSchoolPasskeys} from './routes/passkeys.js';
 import { json, HttpError, currentUser } from "./lib/http.js";
 import { ensureSchema } from "./lib/schema.js";
 import { applySecurityHeaders } from "./lib/auth-sessions.js";
@@ -14,6 +15,7 @@ async function routeApi(request, env, url) {
     const origin = request.headers.get("Origin");
     if (origin && origin !== url.origin) return json({ error: "คำขอไม่ได้มาจากหน้าเว็บของระบบ" }, 403);
   }
+  if(url.pathname.startsWith("/api/passkeys"))return handleSchoolPasskeys(request,env);
   if (parts[1] === "auth" && parts[2] === "login" && method === "POST") return login(request, env);
   if (parts[1] === "auth" && parts[2] === "logout" && method === "POST") return logout(request, env);
   const user = await currentUser(request, env);
