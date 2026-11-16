@@ -16,6 +16,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/app.css">
+<script>/* ธีมสีตามวัน (เวลาไทย) — ตั้งก่อนแสดงผล กันสีกระพริบ */
+(function(){var C={0:"#4e0f18",1:"#6b4003",2:"#4a1b5e",3:"#0b3f3d",4:"#7a2b05",5:"#0c2e5c",6:"#4e0f18"};
+function set(){var d=new Date(Date.now()+7*3600e3).getUTCDay();if(document.documentElement.dataset.day!==String(d)){document.documentElement.dataset.day=d;var m=document.querySelector('meta[name="theme-color"]');if(m)m.content=C[d];}}
+set();setInterval(set,60000);document.addEventListener("visibilitychange",set);})();</script>
 </head>
 <body>
 <main id="login" class="auth" hidden>
