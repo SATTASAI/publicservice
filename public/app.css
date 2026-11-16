@@ -7,9 +7,11 @@
   --acc:#e8a33d; --accsoft:#fdf3e1;
   --bad:#c9334a; --badsoft:#fcebee; --good:#1d8a5a; --goodsoft:#e5f5ec; --warn:#c27a12; --warnsoft:#fdf2dc;
   --ref:#5b4bc4; --refsoft:#efedfb;
+  /* ธีมรายวัน (ค่าเริ่มต้น = พุธ เขียวเย็น) — main.js/สคริปต์ใน <head> ตั้ง data-day ตามวันเวลาไทย */
+  --pri-l:#1b6f6a; --pri-x:#082d2c; --on-dark:#a9cfca; --on-dark2:#cfe6e2; --shade:11 63 61;
   --r:16px; --r-sm:12px;
   --shadow:0 1px 0 rgba(20,33,31,.04), 0 1px 3px rgba(20,33,31,.06);
-  --shadow-lg:0 18px 44px rgba(11,63,61,.18);
+  --shadow-lg:0 18px 44px rgb(var(--shade) / .18);
   --safe-b:env(safe-area-inset-bottom, 0px); --safe-t:env(safe-area-inset-top, 0px);
   --nav-h:84px; --bar-h:62px; --ease:cubic-bezier(.2,.9,.3,1);
 }
@@ -41,11 +43,11 @@ button { font: inherit; color: inherit; }
 
 /* ---------- เข้าสู่ระบบ ---------- */
 .auth { min-height: 100%; display: flex; flex-direction: column; align-items: center; padding: calc(var(--safe-t) + 3rem) 1.2rem 2rem;
-  background: radial-gradient(120% 60% at 50% 0%, #1b6f6a 0%, var(--pri-d) 55%, #082d2c 100%); }
+  background: radial-gradient(120% 60% at 50% 0%, var(--pri-l) 0%, var(--pri-d) 55%, var(--pri-x) 100%); }
 .auth-hero { text-align: center; color: #fff; margin-bottom: 1.6rem; }
 .auth-hero img { width: 88px; height: 88px; border-radius: 50%; background: #fff; padding: 5px; box-shadow: 0 0 0 6px rgba(255,255,255,.08); }
 .auth-hero h1 { margin: .8rem 0 .1rem; font-size: 1.65rem; font-weight: 700; letter-spacing: -.01em; }
-.auth-hero p { margin: 0; color: #cfe6e2; font-size: .93rem; }
+.auth-hero p { margin: 0; color: var(--on-dark2); font-size: .93rem; }
 .auth-card { width: min(420px, 100%); background: #fff; border-radius: 22px; padding: 1.6rem 1.5rem; box-shadow: 0 24px 60px rgba(0,0,0,.28); }
 .auth-card h2 { margin: 0; font-size: 1.25rem; } .auth-card .btn { margin-top: 1rem; }
 
@@ -59,7 +61,7 @@ html, body { overscroll-behavior: none; }
 .appbar img { width: 36px; height: 36px; border-radius: 50%; background: #fff; padding: 2px; }
 .appbar .ttl { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
 .appbar .ttl b { font-size: 1.1rem; font-weight: 700; }
-.appbar .ttl small { color: #a9cfca; font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appbar .ttl small { color: var(--on-dark); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .period { border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.08); color: #fff; font-weight: 600; font-size: .82rem; padding: .38rem .75rem; border-radius: 999px; cursor: pointer; white-space: nowrap; }
 .period::after { content: " ▾"; opacity: .7; }
 .content { grid-row: 2; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
@@ -69,7 +71,7 @@ html, body { overscroll-behavior: none; }
 .nav { position: absolute; z-index: 30; left: 12px; right: 12px; bottom: calc(var(--safe-b) + 10px); max-width: 560px; margin: 0 auto;
   display: flex; justify-content: space-around; height: var(--bar-h); padding: 0 6px; border-radius: 999px;
   background: rgba(255,255,255,.78); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border: 1px solid rgba(255,255,255,.6); box-shadow: 0 10px 30px rgba(11,63,61,.18), 0 2px 6px rgba(11,63,61,.08), inset 0 0 0 .5px rgba(20,33,31,.06);
+  border: 1px solid rgba(255,255,255,.6); box-shadow: 0 10px 30px rgb(var(--shade) / .18), 0 2px 6px rgb(var(--shade) / .08), inset 0 0 0 .5px rgba(20,33,31,.06);
   animation: navin .45s var(--ease); }
 @keyframes navin { from { transform: translateY(calc(100% + 20px)); opacity: 0; } }
 .nav button { position: relative; flex: 1; min-width: 0; border: 0; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
@@ -91,12 +93,12 @@ html, body { overscroll-behavior: none; }
 .sec small { color: var(--muted); font-weight: 500; font-size: .82rem; }
 .hero { border-radius: 20px; padding: 1.1rem 1.15rem; color: #fff; background: var(--pri-d); position: relative; overflow: hidden; }
 .hero::before { content: ""; position: absolute; inset: auto -30px -60px auto; width: 200px; height: 200px; border-radius: 50%; background: radial-gradient(circle, rgba(232,163,61,.35), transparent 70%); }
-.hero .lbl { color: #a9cfca; font-size: .85rem; font-weight: 500; position: relative; }
+.hero .lbl { color: var(--on-dark); font-size: .85rem; font-weight: 500; position: relative; }
 .hero .big { font-size: 2.3rem; font-weight: 700; line-height: 1.15; letter-spacing: -.02em; position: relative; }
-.hero .big small { font-size: .95rem; font-weight: 500; color: #cfe6e2; letter-spacing: 0; }
+.hero .big small { font-size: .95rem; font-weight: 500; color: var(--on-dark2); letter-spacing: 0; }
 .hero .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .45rem; margin-top: .9rem; position: relative; }
 .hero .grid div { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); border-radius: var(--r-sm); padding: .5rem .6rem; }
-.hero .grid b { display: block; font-size: 1.2rem; font-weight: 700; } .hero .grid span { font-size: .74rem; color: #cfe6e2; }
+.hero .grid b { display: block; font-size: 1.2rem; font-weight: 700; } .hero .grid span { font-size: .74rem; color: var(--on-dark2); }
 .search { display: flex; align-items: center; gap: .5rem; background: #fff; border: 1.5px solid var(--line); border-radius: 14px; padding: 0 .9rem; margin: .9rem 0 .2rem; transition: border-color .15s; }
 .search:focus-within { border-color: var(--pri2); }
 .search svg { width: 20px; height: 20px; fill: #93a39e; flex: none; }
@@ -115,7 +117,7 @@ html, body { overscroll-behavior: none; }
 .st { display: flex; align-items: center; gap: .75rem; background: var(--card); border-radius: var(--r); padding: .7rem .8rem; border: 1.5px solid var(--line); cursor: pointer; transition: border-color .15s, background .15s; user-select: none; }
 .st:hover { border-color: var(--line2); }
 .st:active { transform: scale(.995); }
-.st.sel { border-color: var(--pri2); background: #f2faf8; }
+.st.sel { border-color: var(--pri2); background: var(--selbg); }
 .st.fail { border-left: 4px solid var(--bad); }
 .st.left { opacity: .5; }
 .st .chk { flex: none; width: 24px; height: 24px; border-radius: 8px; border: 2px solid var(--line2); display: grid; place-items: center; color: #fff; font-size: .78rem; font-weight: 700; background: #fff; transition: background .15s; }
@@ -128,7 +130,7 @@ html, body { overscroll-behavior: none; }
 .ring { flex: none; --p: 100; --c: var(--good); width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center;
   background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--sunk) 0); }
 .ring span { width: 40px; height: 40px; border-radius: 50%; background: #fff; display: grid; place-items: center; font-weight: 700; font-size: .98rem; color: var(--c); }
-.st.sel .ring span { background: #f2faf8; }
+.st.sel .ring span { background: var(--selbg); }
 .ring.mid { --c: var(--warn); } .ring.low { --c: var(--bad); }
 .tag { display: inline-block; font-size: .7rem; font-weight: 600; padding: .04rem .5rem; border-radius: 999px; margin-left: .25rem; vertical-align: 1px; white-space: nowrap; }
 .tag.no { background: var(--bad); color: #fff; } .tag.room { background: var(--sunk); color: var(--ink2); margin-left: 0; }
@@ -182,7 +184,7 @@ html, body { overscroll-behavior: none; }
 /* ---------- Bottom sheet ---------- */
 dialog.sheet { border: 0; padding: .5rem 1.2rem calc(1.2rem + var(--safe-b)); margin: auto 0 0; width: 100%; max-width: 100%; max-height: 92vh; border-radius: 24px 24px 0 0; background: #fff; box-shadow: 0 -12px 40px rgba(0,0,0,.22); overflow-y: auto; color: var(--ink); }
 dialog.sheet[open] { animation: sheet .28s var(--ease); }
-dialog.sheet::backdrop { background: rgba(8,45,44,.5); }
+dialog.sheet::backdrop { background: rgb(var(--shade, 11 63 61) / .5); }
 @keyframes sheet { from { transform: translateY(100%); } }
 .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line2); margin: .2rem auto .8rem; }
 dialog.sheet h2 { margin: 0 0 .2rem; font-size: 1.2rem; font-weight: 700; }
@@ -295,3 +297,27 @@ dialog.sheet h2 { margin: 0 0 .2rem; font-size: 1.2rem; font-weight: 700; }
 .rec .pt.good small { display: block; font-size: .64rem; font-weight: 600; }
 .seg.kinds button em { font-style: normal; font-size: .7rem; background: var(--bad); color: #fff; border-radius: 999px; padding: 0 .4rem; margin-left: .2rem; }
 .seg.kinds button em:empty { display: none; }
+
+/* ---------- ธีมสีตามวัน (สีสถานะ ตัด/เพิ่ม/ไม่ผ่าน คงเดิม) ---------- */
+:root { --selbg: color-mix(in srgb, var(--pri2) 7%, #fff); }
+@supports (color: color-mix(in srgb, red, blue)) {
+  :root { --sunk: color-mix(in srgb, var(--pri) 7%, #f2f3f1); --line: color-mix(in srgb, var(--pri) 9%, #e6e8e5); --line2: color-mix(in srgb, var(--pri) 14%, #d6dad5); }
+}
+/* จันทร์ — เหลือง ร้อน */
+:root[data-day="1"] { --pri:#a8670a; --pri-d:#6b4003; --pri2:#d99a1e; --prisoft:#fcf0cf; --bg:#faf6ea; --acc:#f5c518; --accsoft:#fdf6d8;
+  --pri-l:#9a6a0c; --pri-x:#3f2602; --on-dark:#f3d996; --on-dark2:#fbe9bd; --shade:107 64 3; }
+/* อังคาร — ชมพู ม่วง */
+:root[data-day="2"] { --pri:#8e3a9d; --pri-d:#4a1b5e; --pri2:#c2549d; --prisoft:#f6e6f4; --bg:#f8f3f8; --acc:#f29ac8; --accsoft:#fcebf4;
+  --pri-l:#7d3592; --pri-x:#2a0d36; --on-dark:#dcbde8; --on-dark2:#efdcf3; --shade:74 27 94; }
+/* พุธ — เขียว เย็น (ค่าเริ่มต้น) */
+/* พฤหัสบดี — ส้ม แสด ร้อน */
+:root[data-day="4"] { --pri:#c2510f; --pri-d:#7a2b05; --pri2:#ea7a22; --prisoft:#fde8d6; --bg:#faf4ee; --acc:#f6b042; --accsoft:#fdf0dc;
+  --pri-l:#b24a10; --pri-x:#461802; --on-dark:#f6c9a3; --on-dark2:#fbe2cc; --shade:122 43 5; }
+/* ศุกร์ — ฟ้า น้ำเงิน เย็น */
+:root[data-day="5"] { --pri:#1d5fb4; --pri-d:#0c2e5c; --pri2:#2f86d8; --prisoft:#e1edfb; --bg:#f0f4fa; --acc:#5cc8f0; --accsoft:#e2f5fc;
+  --pri-l:#1d4f94; --pri-x:#061a36; --on-dark:#b4cff1; --on-dark2:#d6e5f8; --shade:12 46 92; }
+/* เสาร์ อาทิตย์ — เลือดหมู ร้อน */
+:root[data-day="6"], :root[data-day="0"] { --pri:#8b1e2d; --pri-d:#4e0f18; --pri2:#b33a48; --prisoft:#f7e4e6; --bg:#f8f2f2; --acc:#e0a35a; --accsoft:#fbeedd;
+  --pri-l:#7c1c29; --pri-x:#2b060c; --on-dark:#e5b9be; --on-dark2:#f2d9dc; --shade:78 15 24; }
+/* เปลี่ยนธีมแบบนุ่มนวล */
+.appbar, .hero, .btn.primary, .nav, body { transition: background-color .5s, color .3s; }
