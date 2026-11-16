@@ -92,6 +92,14 @@ async function getWarnN(env) {
   const n = Number(r?.value);
   return Number.isInteger(n) && n >= 0 && n <= WARN_MAX ? n : WARN_DEFAULT;
 }
+// ส่งต่อฝ่ายปกครองอัตโนมัติเมื่อหักตั้งแต่ refer_min คะแนนขึ้นไป (ครูที่ไม่ใช่ฝ่ายปกครอง)
+const REFER_DEFAULT = 10;
+async function getReferMin(env) {
+  const r = await env.DB.prepare("SELECT value FROM ps_settings WHERE key = 'refer_min'").first().catch(() => null);
+  const n = Number(r?.value);
+  return Number.isInteger(n) && n >= 1 && n <= 100 ? n : REFER_DEFAULT;
+}
+const putSetting = (env, key, value, uid) => env.DB.prepare("INSERT INTO ps_settings (key, value, updated_by) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = datetime('now')").bind(key, value, uid);
 function hoursState(h) {
   const th = new Date(Date.now() + 7 * 3600e3);
   const day = th.getUTCDay(), now = th.toISOString().slice(11, 16);
@@ -104,11 +112,14 @@ async function requireOpen(env) {
 }
 
 // { student_id: [เรื่องที่ถูกตัดแล้ว / ตักเตือนแล้ว ในวันที่ date] }
-async function reasonsOn(env, ids, date, warn) {
+const REASON_SQL = {
+  deduct: "SELECT student_id, reason FROM ps_behavior_records WHERE incident_date = ? AND points < 0 AND cancelled_at IS NULL",
+  warn: "SELECT student_id, reason FROM ps_behavior_warnings WHERE incident_date = ? AND cancelled_at IS NULL",
+  refer: "SELECT student_id, reason FROM ps_referrals WHERE incident_date = ? AND status = 'pending'",
+};
+async function reasonsOn(env, ids, date, kind) {
   const out = {};
-  const sql = warn
-    ? "SELECT student_id, reason FROM ps_behavior_warnings WHERE incident_date = ? AND cancelled_at IS NULL"
-    : "SELECT student_id, reason FROM ps_behavior_records WHERE incident_date = ? AND points < 0 AND cancelled_at IS NULL";
+  const sql = REASON_SQL[kind];
   for (let i = 0; i < ids.length; i += 90) {
     const chunk = ids.slice(i, i + 90);
     if (!chunk.length) continue;
@@ -117,8 +128,9 @@ async function reasonsOn(env, ids, date, warn) {
   }
   return out;
 }
-const deductedOn = (env, ids, date) => reasonsOn(env, ids, date, false);
-const warnedOn = (env, ids, date) => reasonsOn(env, ids, date, true);
+const deductedOn = (env, ids, date) => reasonsOn(env, ids, date, "deduct");
+const warnedOn = (env, ids, date) => reasonsOn(env, ids, date, "warn");
+const referredOn = (env, ids, date) => reasonsOn(env, ids, date, "refer");
 
 // { student_id: จำนวนครั้งที่ถูกตักเตือนเรื่อง reason ในภาคเรียน } (reason ว่าง = ทุกเรื่อง)
 async function warnCounts(env, yearId, term, ids, reason) {
@@ -185,7 +197,8 @@ export async function handleMe(request, env, user, url) {
     years: await listYears(env), year, terms, term: currentTerm(terms), today: thaiToday(),
     rooms: await editableRooms(env, user, year.id), base: BASE_SCORE, pass_min: PASS_MIN,
     hours: hoursState(await getHours(env)), warn_n: await getWarnN(env), zones: await getZones(env),
-    presets_deduct: await getPresets(env),
+    presets_deduct: await getPresets(env), refer_min: await getReferMin(env),
+    pending_referrals: user.is_discipline ? Number((await env.DB.prepare("SELECT COUNT(*) AS n FROM ps_referrals WHERE status = 'pending' AND academic_year_id = ?").bind(year.id).first())?.n || 0) : 0,
   });
 }
 
@@ -198,12 +211,13 @@ export async function handleRoom(request, env, user, url) {
   const ids = roster.map((r) => r.id);
   const today = await deductedOn(env, ids, thaiToday());
   const todayW = await warnedOn(env, ids, thaiToday());
+  const todayR = await referredOn(env, ids, thaiToday());
   const wc = await warnCounts(env, year.id, term, ids);
   return json({ year, term, grade, room, students: roster.map((r) => {
     const score = s[r.id]?.score ?? BASE_SCORE;
     return { id: r.id, number: r.number, code: r.student_code, name: studentName(r), left: LEFT_STATUSES.includes(r.enrollment_status),
       score, pass: score >= PASS_MIN, deduct_count: Number(s[r.id]?.deduct_count || 0), add_count: Number(s[r.id]?.add_count || 0),
-      warn_count: wc[r.id] || 0, today_deducted: today[r.id] || [], today_warned: todayW[r.id] || [] };
+      warn_count: wc[r.id] || 0, today_deducted: today[r.id] || [], today_warned: todayW[r.id] || [], today_referred: todayR[r.id] || [] };
   }) });
 }
 
@@ -250,8 +264,8 @@ export async function handleStats(request, env, user, url) {
   const cond = `academic_year_id = ? AND term_number = ? AND cancelled_at IS NULL${from ? " AND incident_date >= ?" : ""}${to ? " AND incident_date <= ?" : ""}`;
   const args = [year.id, term, ...(from ? [from] : []), ...(to ? [to] : [])];
   const [{ results: recs }, { results: warns }] = await Promise.all([
-    env.DB.prepare(`SELECT r.id, r.student_id, r.points, r.reason, r.incident_date, u.full_name AS by_name FROM ps_behavior_records r LEFT JOIN users u ON u.id = r.created_by WHERE ${cond.replace(/(academic_year_id|term_number|cancelled_at|incident_date)/g, "r.$1")} ORDER BY r.incident_date, r.id`).bind(...args).all(),
-    env.DB.prepare(`SELECT w.id, w.student_id, 0 AS points, w.reason, w.incident_date, u.full_name AS by_name FROM ps_behavior_warnings w LEFT JOIN users u ON u.id = w.created_by WHERE ${cond.replace(/(academic_year_id|term_number|cancelled_at|incident_date)/g, "w.$1")} ORDER BY w.incident_date, w.id`).bind(...args).all(),
+    env.DB.prepare(`SELECT r.id, r.student_id, r.points, r.reason, r.incident_date, u.full_name AS by_name, (SELECT fu.full_name FROM ps_referrals f JOIN users fu ON fu.id = f.referred_by WHERE f.record_id = r.id) AS ref_name FROM ps_behavior_records r LEFT JOIN users u ON u.id = r.created_by WHERE ${cond.replace(/(academic_year_id|term_number|cancelled_at|incident_date)/g, "r.$1")} ORDER BY r.incident_date, r.id`).bind(...args).all(),
+    env.DB.prepare(`SELECT w.id, w.student_id, 0 AS points, w.reason, w.incident_date, u.full_name AS by_name, (SELECT fu.full_name FROM ps_referrals f JOIN users fu ON fu.id = f.referred_by WHERE f.warning_id = w.id) AS ref_name FROM ps_behavior_warnings w LEFT JOIN users u ON u.id = w.created_by WHERE ${cond.replace(/(academic_year_id|term_number|cancelled_at|incident_date)/g, "w.$1")} ORDER BY w.incident_date, w.id`).bind(...args).all(),
   ]);
   const R = recs.filter((x) => who.has(x.student_id)), W = warns.filter((x) => who.has(x.student_id));
 
@@ -259,9 +273,9 @@ export async function handleStats(request, env, user, url) {
     const cell = (v) => { const t = String(v ?? ""); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
     const rows = [...R.map((x) => ({ ...x, kind: x.points < 0 ? "ตัด" : "เพิ่ม" })), ...W.map((x) => ({ ...x, kind: "ตักเตือน" }))]
       .sort((a, b) => String(a.incident_date).localeCompare(String(b.incident_date)) || a.id - b.id);
-    const lines = [["วันที่", "ชั้น", "เลขที่", "เลขประจำตัว", "ชื่อ-สกุล", "ประเภท", "คะแนน", "พฤติกรรม/เหตุผล", "ผู้บันทึก"].join(",")];
+    const lines = [["วันที่", "ชั้น", "เลขที่", "เลขประจำตัว", "ชื่อ-สกุล", "ประเภท", "คะแนน", "พฤติกรรม/เหตุผล", "ผู้บันทึก", "ส่งต่อโดย"].join(",")];
     for (const x of rows) { const s = who.get(x.student_id);
-      lines.push([x.incident_date, `${s.grade}/${s.room}`, s.number ?? "", s.code ?? "", s.name, x.kind, x.points || "", x.reason, x.by_name || ""].map(cell).join(",")); }
+      lines.push([x.incident_date, `${s.grade}/${s.room}`, s.number ?? "", s.code ?? "", s.name, x.kind, x.points || "", x.reason, x.by_name || "", x.ref_name || ""].map(cell).join(",")); }
     return new Response("﻿" + lines.join("\r\n"), { headers: { "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="behavior-stats-${year.year_be || year.id}-t${term}.csv"`, "Cache-Control": "no-store" } });
   }
@@ -303,21 +317,31 @@ export async function handleRecords(request, env, user, parts, method, url) {
     if (!st) fail(404, "ไม่พบนักเรียนในห้องนี้");
     const { results } = await env.DB.prepare(
       `SELECT r.id, r.points, r.reason, r.incident_date, r.created_at, r.created_by, u.full_name AS created_by_name,
-              r.cancelled_at, r.cancel_reason, c.full_name AS cancelled_by_name
+              r.cancelled_at, r.cancel_reason, c.full_name AS cancelled_by_name,
+              (SELECT fu.full_name FROM ps_referrals f JOIN users fu ON fu.id = f.referred_by WHERE f.record_id = r.id) AS referred_by_name
          FROM ps_behavior_records r LEFT JOIN users u ON u.id = r.created_by LEFT JOIN users c ON c.id = r.cancelled_by
         WHERE r.academic_year_id = ? AND r.term_number = ? AND r.student_id = ? ORDER BY r.id`
     ).bind(year.id, term, sid).all();
     const score = foldScore(results.filter((r) => !r.cancelled_at).map((r) => r.points));
     const { results: warns } = await env.DB.prepare(
       `SELECT w.id, 0 AS points, w.reason, w.incident_date, w.created_at, w.created_by, u.full_name AS created_by_name,
-              w.cancelled_at, w.cancel_reason, c.full_name AS cancelled_by_name
+              w.cancelled_at, w.cancel_reason, c.full_name AS cancelled_by_name,
+              (SELECT fu.full_name FROM ps_referrals f JOIN users fu ON fu.id = f.referred_by WHERE f.warning_id = w.id) AS referred_by_name
          FROM ps_behavior_warnings w LEFT JOIN users u ON u.id = w.created_by LEFT JOIN users c ON c.id = w.cancelled_by
         WHERE w.academic_year_id = ? AND w.term_number = ? AND w.student_id = ?`
     ).bind(year.id, term, sid).all();
-    const all = [...results, ...warns.map((w) => ({ ...w, warn: true }))]
+    // ส่งต่อฝ่ายปกครองที่ยังรอพิจารณา / ไม่ดำเนินการ (ที่ดำเนินการแล้วแสดงในรายการคะแนน/ตักเตือน)
+    const { results: refs } = await env.DB.prepare(
+      `SELECT f.id, f.points, f.reason, f.incident_date, f.referred_at AS created_at, f.referred_by AS created_by, u.full_name AS created_by_name,
+              f.status, f.note, f.auto, f.decision_note, d.full_name AS decided_by_name
+         FROM ps_referrals f LEFT JOIN users u ON u.id = f.referred_by LEFT JOIN users d ON d.id = f.decided_by
+        WHERE f.academic_year_id = ? AND f.term_number = ? AND f.student_id = ? AND f.status IN ('pending', 'rejected')`
+    ).bind(year.id, term, sid).all();
+    const all = [...results, ...warns.map((w) => ({ ...w, warn: true })), ...refs.map((f) => ({ ...f, referral: true }))]
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || b.id - a.id);
     return json({ student: { id: sid, number: st.number, name: studentName(st) }, score, warn_n: await getWarnN(env),
-      records: all.map((r) => ({ ...r, can_cancel: !r.cancelled_at && (user.is_discipline || r.created_by === user.id) })) });
+      records: all.map((r) => ({ ...r, can_cancel: r.referral ? r.status === "pending" && (user.is_discipline || r.created_by === user.id)
+        : !r.cancelled_at && (user.is_discipline || r.created_by === user.id), can_decide: !!(r.referral && r.status === "pending" && user.is_discipline) })) });
   }
 
   // POST /api/records — ตัด/เพิ่มคะแนน (เลือกได้หลายคนพร้อมกัน)
@@ -344,13 +368,24 @@ export async function handleRecords(request, env, user, parts, method, url) {
     // ตัด/ตักเตือนเรื่องเดียวกันได้วันละครั้ง (นับรวมทุกครู) · ยกเลิกรายการแล้วบันทึกใหม่ได้
     let skipped = [], warnIds = [];
     if (points < 0) {
-      const done = await deductedOn(env, ids, date), warned = await warnedOn(env, ids, date);
-      const skipIds = ids.filter((id) => (done[id] || []).includes(reason) || (warned[id] || []).includes(reason));
+      const done = await deductedOn(env, ids, date), warned = await warnedOn(env, ids, date), referred = await referredOn(env, ids, date);
+      const skipIds = ids.filter((id) => [done, warned, referred].some((m) => (m[id] || []).includes(reason)));
       if (skipIds.length) {
         const names = roster.filter((r) => skipIds.includes(r.id)).map(studentName);
-        if (skipIds.length === ids.length) fail(409, `ถูกตัดคะแนน/ตักเตือนเรื่อง "${reason}" ในวันนี้แล้ว: ${names.join(", ")}`);
+        if (skipIds.length === ids.length) fail(409, `ถูกตัดคะแนน/ตักเตือน/ส่งต่อฝ่ายปกครองเรื่อง "${reason}" ในวันนี้แล้ว: ${names.join(", ")}`);
         ids = ids.filter((id) => !skipIds.includes(id));
         skipped = names;
+      }
+      // ส่งต่อฝ่ายปกครอง: หัก ≥ refer_min ส่งต่ออัตโนมัติ · ต่ำกว่านั้นครูเลือกส่งต่อเองได้ · ครูฝ่ายปกครองบันทึกเองไม่ต้องส่งต่อ
+      // ยังไม่หักคะแนนจนกว่าครูฝ่ายปกครองกดหัก (ใช้กติกาเดิม: วันละครั้ง ตักเตือนก่อน โซน)
+      const auto = amount >= (await getReferMin(env));
+      if (!user.is_discipline && (auto || b.refer === true)) {
+        const note = text(b.note, 300);
+        await env.DB.batch(ids.map((sid) => env.DB.prepare(
+          "INSERT INTO ps_referrals (academic_year_id, term_number, student_id, grade_level, classroom, points, reason, incident_date, note, auto, referred_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+        ).bind(year.id, term, sid, grade, room, amount, reason, date, note || null, auto ? 1 : 0, user.id)));
+        await audit(env, user, "referral.add", { grade, room, term, amount, reason, auto, students: ids });
+        return json({ ok: true, saved: 0, warned: 0, referred: ids.length, auto, skipped });
       }
       // โซนปานกลางขึ้นไป (≥ mid): ครูเลือกเอง mode = "warn" (ตักเตือน) | "deduct" (ตัดคะแนนเลย)
       // โซนเล็กน้อย: ยังตักเตือนเรื่องนี้ไม่ครบตามที่ตั้งค่า → บันทึกเป็นตักเตือน (ไม่ตัดคะแนน)
@@ -406,7 +441,7 @@ export async function handleRecords(request, env, user, parts, method, url) {
 // GET/PUT /api/settings — เวลาเปิด-ปิด ตักเตือน โซน ข้อพฤติกรรม · แก้ได้เฉพาะผู้ดูแลระบบ/ผู้บริหาร
 export async function handleSettings(request, env, user, method) {
   requireUser(user);
-  if (method === "GET") return json({ hours: hoursState(await getHours(env)), warn_n: await getWarnN(env), zones: await getZones(env) });
+  if (method === "GET") return json({ hours: hoursState(await getHours(env)), warn_n: await getWarnN(env), zones: await getZones(env), refer_min: await getReferMin(env) });
   if (method === "PUT") {
     requireAdmin(user);
     const b = await readJson(request);
@@ -427,6 +462,14 @@ export async function handleSettings(request, env, user, method) {
         .bind(JSON.stringify(z), user.id).run();
       await audit(env, user, "settings.zones", z);
       return json({ ok: true, zones: z });
+    }
+    // PUT { refer_min } — หักตั้งแต่กี่คะแนนส่งต่อฝ่ายปกครองอัตโนมัติ
+    if (b.refer_min !== undefined) {
+      const n = Number(b.refer_min);
+      if (!Number.isInteger(n) || n < 1 || n > 100) fail(400, "เกณฑ์ส่งต่อต้องเป็นจำนวนเต็ม 1–100");
+      await putSetting(env, "refer_min", String(n), user.id).run();
+      await audit(env, user, "settings.refer", { refer_min: n });
+      return json({ ok: true, refer_min: n });
     }
     // PUT { warn_count } — จำนวนครั้งที่ต้องตักเตือนก่อนตัดคะแนน
     if (b.warn_count !== undefined) {
@@ -482,6 +525,88 @@ export async function handleStaff(request, env, user, method) {
     }
     await audit(env, user, "staff.update", { user_id: uid, discipline: !!b.discipline });
     return json({ ok: true });
+  }
+  fail(405, "ไม่รองรับ");
+}
+
+// ---------- ส่งต่อฝ่ายปกครองพิจารณา ----------
+// GET /api/referrals?year&term&status=pending|done|all — ฝ่ายปกครอง/ผู้ดูแล: ทั้งโรงเรียน · ครูอื่น: เฉพาะที่ตนส่งต่อ
+// POST /api/referrals/:id/decide { action: deduct|warn|reject, note } — ครูฝ่ายปกครอง (บันทึกชื่อผู้กด)
+// POST /api/referrals/:id/cancel — ผู้ส่งต่อเอง (ยังรอพิจารณา) หรือฝ่ายปกครอง
+export async function handleReferrals(request, env, user, parts, method, url) {
+  requireUser(user);
+  if (method === "GET" && !parts[2]) {
+    const q = url.searchParams;
+    const year = await resolveYear(env, q.get("year"));
+    const term = termOf(q.get("term"));
+    const st = q.get("status") || "pending";
+    const cond = st === "pending" ? "AND f.status = 'pending'" : st === "done" ? "AND f.status <> 'pending'" : "";
+    const { results } = await env.DB.prepare(
+      `SELECT f.*, s.student_code, s.name_prefix, s.first_name, s.last_name, s.full_name,
+              u.full_name AS referred_by_name, d.full_name AS decided_by_name,
+              (SELECT n.number FROM gr_roster_numbers n WHERE n.academic_year_id = f.academic_year_id AND n.student_id = f.student_id) AS number
+         FROM ps_referrals f JOIN students s ON s.id = f.student_id
+         LEFT JOIN users u ON u.id = f.referred_by LEFT JOIN users d ON d.id = f.decided_by
+        WHERE f.academic_year_id = ? AND f.term_number = ? ${cond} ${user.is_discipline ? "" : "AND f.referred_by = ?"}
+        ORDER BY ${st === "pending" ? "f.id" : "COALESCE(f.decided_at, f.referred_at) DESC, f.id DESC"} LIMIT 300`
+    ).bind(year.id, term, ...(user.is_discipline ? [] : [user.id])).all().catch(() => ({ results: [] }));
+    const ids = [...new Set(results.map((r) => r.student_id))];
+    const wc = ids.length ? await warnCounts(env, year.id, term, ids) : {};
+    return json({ year, term, status: st, warn_n: await getWarnN(env), zones: await getZones(env),
+      referrals: results.map((r) => ({ id: r.id, student_id: r.student_id, name: studentName(r), code: r.student_code, number: r.number ?? null,
+        grade: r.grade_level, room: r.classroom, points: r.points, reason: r.reason, incident_date: r.incident_date, note: r.note, auto: !!r.auto,
+        status: r.status, referred_by_name: r.referred_by_name, referred_at: r.referred_at, decided_by_name: r.decided_by_name, decided_at: r.decided_at,
+        decision_note: r.decision_note, warn_count: wc[r.student_id] || 0,
+        can_decide: r.status === "pending" && !!user.is_discipline, can_cancel: r.status === "pending" && (!!user.is_discipline || r.referred_by === user.id) })) });
+  }
+  const id = intParam(parts[2]);
+  if (method === "POST" && (parts[3] === "decide" || parts[3] === "cancel")) {
+    const b = await readJson(request);
+    const f = await env.DB.prepare("SELECT * FROM ps_referrals WHERE id = ?").bind(id).first();
+    if (!f) fail(404, "ไม่พบรายการส่งต่อ");
+    if (f.status !== "pending") fail(409, "รายการนี้ดำเนินการแล้ว");
+    const note = text(b.note ?? b.reason, 300);
+    if (parts[3] === "cancel") {
+      if (!user.is_discipline && f.referred_by !== user.id) fail(403, "ยกเลิกได้เฉพาะรายการที่ตนส่งต่อ");
+      if (!note) fail(400, "กรุณาระบุเหตุผลที่ยกเลิก");
+      await env.DB.prepare("UPDATE ps_referrals SET status = 'cancelled', decided_by = ?, decided_at = datetime('now'), decision_note = ? WHERE id = ? AND status = 'pending'").bind(user.id, note, id).run();
+      await audit(env, user, "referral.cancel", { id, reason: note });
+      return json({ ok: true });
+    }
+    if (!user.is_discipline) fail(403, "เฉพาะครูฝ่ายปกครองพิจารณาได้");
+    await requireOpen(env);
+    const action = b.action;
+    if (!["deduct", "warn", "reject"].includes(action)) fail(400, "เลือก ตัดคะแนน ตักเตือน หรือ ไม่ดำเนินการ");
+    const decide = (status, extra = "", args = []) => env.DB.prepare(
+      `UPDATE ps_referrals SET status = ?, decided_by = ?, decided_at = datetime('now'), decision_note = ?${extra} WHERE id = ? AND status = 'pending'`
+    ).bind(status, user.id, note || null, ...args, id);
+    if (action === "reject") {
+      if (!note) fail(400, "กรุณาระบุเหตุผลที่ไม่ดำเนินการ");
+      await decide("rejected").run();
+      await audit(env, user, "referral.reject", { id, reason: note });
+      return json({ ok: true, result: "rejected" });
+    }
+    // กติกาเดิม: ตัด/ตักเตือนเรื่องเดียวกันวันละครั้ง · โซนเล็กน้อยต้องตักเตือนครบก่อน · ปานกลางขึ้นไปเลือกเอง
+    const ids = [f.student_id];
+    const [done, warned] = [await deductedOn(env, ids, f.incident_date), await warnedOn(env, ids, f.incident_date)];
+    if ([done, warned].some((m) => (m[f.student_id] || []).includes(f.reason))) fail(409, `นักเรียนถูกตัดคะแนน/ตักเตือนเรื่อง "${f.reason}" ในวันที่เกิดเหตุแล้ว`);
+    let asWarn = action === "warn";
+    if (!asWarn && f.points < (await getZones(env)).mid) {
+      const n = await getWarnN(env);
+      if (n > 0 && ((await warnCounts(env, f.academic_year_id, f.term_number, ids, f.reason))[f.student_id] || 0) < n) asWarn = true;
+    }
+    if (asWarn) {
+      const r = await env.DB.prepare("INSERT INTO ps_behavior_warnings (academic_year_id, term_number, student_id, reason, incident_date, created_by) VALUES (?,?,?,?,?,?) RETURNING id")
+        .bind(f.academic_year_id, f.term_number, f.student_id, f.reason, f.incident_date, user.id).first();
+      await decide("warned", ", warning_id = ?", [r.id]).run();
+      await audit(env, user, "referral.warn", { id, warning_id: r.id, requested: action });
+      return json({ ok: true, result: "warned", forced: action === "deduct" });
+    }
+    const r = await env.DB.prepare("INSERT INTO ps_behavior_records (academic_year_id, term_number, student_id, points, reason, incident_date, created_by) VALUES (?,?,?,?,?,?,?) RETURNING id")
+      .bind(f.academic_year_id, f.term_number, f.student_id, -f.points, f.reason, f.incident_date, user.id).first();
+    await decide("deducted", ", record_id = ?", [r.id]).run();
+    await audit(env, user, "referral.deduct", { id, record_id: r.id, points: -f.points });
+    return json({ ok: true, result: "deducted" });
   }
   fail(405, "ไม่รองรับ");
 }
