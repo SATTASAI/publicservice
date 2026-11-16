@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#4338ca">
+<meta name="theme-color" content="#0f3d3e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -45,6 +45,7 @@
   <nav class="nav" id="nav">
     <button data-tab="overview" id="navOverview" hidden><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3zm0 8h8v-6H3zm10 0h8V11h-8zm0-18v6h8V3z"/></svg><span>ภาพรวม</span></button>
     <button data-tab="room"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3m-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3m0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13m8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5"/></svg><span>ห้องเรียน</span></button>
+    <button data-tab="refer" class="has-badge"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5zm1 14h-2v-2h2zm0-4h-2V7h2z"/></svg><span>ส่งต่อ</span><em class="badge" id="refBadge" hidden></em></button>
     <button data-tab="stats"><svg viewBox="0 0 24 24"><path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/></svg><span>สถิติ</span></button>
     <button data-tab="staff" id="navStaff" hidden><svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm-2 16-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9z"/></svg><span>ฝ่ายปกครอง</span></button>
     <button data-tab="me"><svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4m0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4"/></svg><span>บัญชี</span></button>
@@ -73,6 +74,13 @@
       <div class="listhead"><span class="muted" id="listInfo"></span><button class="link" id="selAll">เลือกทั้งหมด</button></div>
       <div class="empty" id="empty" hidden></div>
       <div class="cards" id="list"></div>
+    </section>
+
+    <!-- ส่งต่อฝ่ายปกครองพิจารณา -->
+    <section id="refer" class="page" hidden>
+      <div class="seg wide" id="refSeg"><button data-s="pending" class="on">รอพิจารณา</button><button data-s="done">ดำเนินการแล้ว</button></div>
+      <div class="info" id="refInfo"></div>
+      <div class="cards" id="refList"></div>
     </section>
 
     <!-- สถิติการตัด/เพิ่มคะแนน -->
@@ -115,6 +123,8 @@
         <div class="item" id="warnEdit" hidden><span class="hours"><input type="number" id="wN" min="0" max="10" inputmode="numeric" aria-label="จำนวนครั้งตักเตือน"> ครั้ง <small class="muted">(0 = ตัดได้ทันที)</small></span><button class="btn primary" id="warnSave">บันทึก</button></div>
         <div class="item"><span>โซนความรุนแรง (คะแนนที่หักต่อครั้ง)</span><span class="muted" id="zoneTxt"></span></div>
         <div class="item" id="zoneEdit" hidden><span class="hours">ปานกลาง≥<input type="number" id="zMid" min="2" max="100" inputmode="numeric" aria-label="เริ่มโซนปานกลาง"> รุนแรง≥<input type="number" id="zHigh" min="2" max="100" inputmode="numeric" aria-label="เริ่มโซนรุนแรง"> รุนแรงมาก≥<input type="number" id="zSev" min="2" max="100" inputmode="numeric" aria-label="เริ่มโซนรุนแรงมาก"></span><button class="btn primary" id="zoneSave">บันทึก</button></div>
+        <div class="item"><span>ส่งต่อฝ่ายปกครองอัตโนมัติ</span><span class="muted" id="referTxt"></span></div>
+        <div class="item" id="referEdit" hidden><span class="hours">หักตั้งแต่ <input type="number" id="rMin" min="1" max="100" inputmode="numeric" aria-label="เกณฑ์ส่งต่อ"> คะแนนขึ้นไป</span><button class="btn primary" id="referSave">บันทึก</button></div>
         <button class="item" id="openPeriod"><span>ปีการศึกษา / ภาคเรียน</span><span class="muted" id="mePeriod"></span></button>
       </div>
       <div id="presetSec" hidden>
@@ -161,6 +171,10 @@
     </div>
     <div class="zone" id="dZone" hidden></div>
     <div class="field" id="dModeBox" hidden>การดำเนินการ<div class="seg" id="dMode"><button type="button" data-m="warn">ตักเตือน</button><button type="button" data-m="deduct">ตัดคะแนนเลย</button></div></div>
+    <div class="refer-box" id="dReferBox" hidden>
+      <label class="refer-row"><span><b>ส่งต่อฝ่ายปกครองพิจารณา</b><small id="dReferHint"></small></span><span class="switch"><input type="checkbox" id="dRefer" aria-label="ส่งต่อฝ่ายปกครอง"><i></i></span></label>
+      <label class="field" id="dNoteBox" hidden>รายละเอียดเหตุการณ์ (ถ้ามี)<input id="dNote" maxlength="300" placeholder="เช่น สถานที่ ผู้เกี่ยวข้อง"></label>
+    </div>
     <label class="field">วันที่<input name="incident_date" id="dDate" type="date"></label>
     <div class="err" id="derr" hidden></div>
     <div class="sheet-act"><button value="cancel" formnovalidate class="btn ghost lg">ยกเลิก</button><button value="ok" class="btn primary lg" id="dOk">บันทึก</button></div>
@@ -186,6 +200,20 @@
     <label class="field">เหตุผลที่ยกเลิก<input id="cxReason" required maxlength="300"></label>
     <div class="err" id="cxerr" hidden></div>
     <div class="sheet-act"><button value="cancel" formnovalidate class="btn ghost lg">ปิด</button><button value="ok" class="btn danger lg" id="cxOk">ยืนยันยกเลิก</button></div>
+  </form>
+</dialog>
+
+<!-- ฝ่ายปกครองพิจารณา -->
+<dialog id="rdDlg" class="sheet">
+  <form method="dialog" id="rdf">
+    <div class="grab"></div>
+    <h2>พิจารณาเรื่องที่ส่งต่อ</h2>
+    <p id="rdWho"></p>
+    <div class="info warn" id="rdRule" hidden></div>
+    <div class="field">การดำเนินการ<div class="seg three" id="rdSeg"><button type="button" data-a="deduct">หักคะแนน</button><button type="button" data-a="warn">ตักเตือน</button><button type="button" data-a="reject">ไม่ดำเนินการ</button></div></div>
+    <label class="field" id="rdNoteLbl">หมายเหตุ (ถ้ามี)<input id="rdNote" maxlength="300"></label>
+    <div class="err" id="rderr" hidden></div>
+    <div class="sheet-act"><button value="cancel" formnovalidate class="btn ghost lg">ปิด</button><button value="ok" class="btn primary lg" id="rdOk" disabled>ยืนยัน</button></div>
   </form>
 </dialog>
 

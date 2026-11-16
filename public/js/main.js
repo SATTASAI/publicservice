@@ -11,7 +11,7 @@ async function api(path, { method = "GET", body } = {}) {
 }
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2500); }
 function closeOnBackdrop(d) { d.addEventListener("click", (e) => { if (e.target === d) d.close(); }); }
-["periodDlg", "dlg", "hist", "cxDlg"].forEach((id) => closeOnBackdrop($(id)));
+["periodDlg", "dlg", "hist", "cxDlg", "rdDlg"].forEach((id) => closeOnBackdrop($(id)));
 
 const PRESETS = {
   add: [["จิตอาสาช่วยงานโรงเรียน", 5], ["ช่วยเหลือเพื่อน/ครู", 5], ["ทำความดี เก็บของได้คืนเจ้าของ", 10], ["บำเพ็ญประโยชน์ต่อชุมชน", 10]],
@@ -20,7 +20,7 @@ const PRESETS = {
 const ZONE_NAMES = ["เล็กน้อย", "ปานกลาง", "รุนแรง", "รุนแรงมาก"];
 function zoneOf(p) { const z = S.me?.zones || { mid: 6, high: 10, severe: 16 }; p = Math.abs(p); return p >= z.severe ? 3 : p >= z.high ? 2 : p >= z.mid ? 1 : 0; }
 const zoneTag = (p) => { const i = zoneOf(p); return `<span class="tag z${i}">${ZONE_NAMES[i]}</span>`; };
-const TITLES = { overview: "ภาพรวมโรงเรียน", room: "ห้องเรียน", stats: "สถิติคะแนน", staff: "ครูฝ่ายปกครอง", me: "บัญชี" };
+const TITLES = { overview: "ภาพรวมโรงเรียน", room: "ห้องเรียน", refer: "ส่งต่อฝ่ายปกครอง", stats: "สถิติคะแนน", staff: "ครูฝ่ายปกครอง", me: "บัญชี" };
 
 const S = { me: null, year: null, term: 1, tab: null, room: null, students: [], sel: new Set(), ov: null, action: null, hist: null };
 const ringCls = (score) => (score < (S.me?.pass_min ?? 50) ? "low" : score < 70 ? "mid" : "");
@@ -48,6 +48,7 @@ async function boot() {
   const u = S.me.user;
   $("navOverview").hidden = !u.is_discipline;
   $("navStaff").hidden = !u.is_admin;
+  paintBadge();
   $("base").textContent = S.me.base; $("passmin").textContent = S.me.pass_min;
   $("profile").innerHTML = `<div class="av">${esc((u.full_name || "?").replace(/^(นาย|นางสาว|นาง)\s*/, "").charAt(0))}</div><div><b>${esc(u.full_name)}</b><span class="muted">${roleLabel(u)}</span></div>`;
   fillYears(); paintPeriod(); paintHours(); paintPresets();
@@ -73,7 +74,7 @@ document.querySelectorAll("#nav button").forEach((b) => (b.onclick = () => go(b.
 function go(tab) {
   S.tab = tab;
   document.querySelectorAll("#nav button").forEach((x) => x.classList.toggle("on", x.dataset.tab === tab));
-  for (const id of ["overview", "room", "stats", "staff", "me"]) $(id).hidden = id !== tab;
+  for (const id of ["overview", "room", "refer", "stats", "staff", "me"]) $(id).hidden = id !== tab;
   $("pageTitle").textContent = TITLES[tab];
   clearSel();
   window.scrollTo(0, 0);
@@ -81,6 +82,7 @@ function go(tab) {
   if (tab === "room") { fillRoomChips(); loadRoom(); }
   if (tab === "stats") { fillStatRooms(); loadStats(); }
   if (tab === "staff") loadStaff();
+  if (tab === "refer") loadRefer();
   paintPeriod(); paintOpen();
 }
 
@@ -90,7 +92,7 @@ function yearLabel() { const y = S.me.years.find((x) => x.id === S.year) || S.me
 function paintPeriod() {
   const t = `ภาค ${S.term}/${yearLabel()}`;
   $("period").textContent = t; $("mePeriod").textContent = `ภาคเรียนที่ ${S.term} ปีการศึกษา ${yearLabel()}`;
-  $("pageSub").textContent = S.tab === "room" && S.room ? `ชั้น ${S.room.grade}/${S.room.room} · ${t}` : S.tab === "overview" ? `ป.1–ป.6 · ${t}` : S.tab === "stats" ? `${S.stRoom ? `ชั้น ${S.stRoom}` : S.me.user.is_discipline ? "ทั้งโรงเรียน" : "ห้องที่ดูแล"} · ${t}` : "โรงเรียนบ้านป่าเด็ง";
+  $("pageSub").textContent = S.tab === "room" && S.room ? `ชั้น ${S.room.grade}/${S.room.room} · ${t}` : S.tab === "overview" ? `ป.1–ป.6 · ${t}` : S.tab === "refer" ? `${S.me.user.is_discipline ? "ทั้งโรงเรียน" : "ที่ท่านส่งต่อ"} · ${t}` : S.tab === "stats" ? `${S.stRoom ? `ชั้น ${S.stRoom}` : S.me.user.is_discipline ? "ทั้งโรงเรียน" : "ห้องที่ดูแล"} · ${t}` : "โรงเรียนบ้านป่าเด็ง";
 }
 const openPeriod = () => { fillYears(); paintSeg(); $("periodDlg").showModal(); };
 $("period").onclick = openPeriod; $("openPeriod").onclick = openPeriod;
@@ -173,7 +175,7 @@ function card(s, { room = false, nosel = false } = {}) {
   return `<div class="st ${s.pass ? "" : "fail"} ${s.left ? "left" : ""} ${sel ? "sel" : ""}" data-id="${s.id}" data-g="${esc(s.grade || S.room?.grade || "")}" data-r="${esc(s.room || S.room?.room || "")}">
     ${nosel || s.left ? "" : `<span class="chk" data-chk>${sel ? "✓" : ""}</span>`}
     <div class="av">${s.number ?? "–"}</div>
-    <div class="nm"><b>${esc(s.name)}</b><small>${room ? `<span class="tag room">${esc(s.grade)}/${esc(s.room)}</span> ` : ""}${esc(s.code)}${s.left ? " · ย้ายออก" : ""}${s.deduct_count ? ` · ตัด ${s.deduct_count}` : ""}${s.add_count ? ` · เพิ่ม ${s.add_count}` : ""}${s.warn_count ? ` · เตือน ${s.warn_count}` : ""}${s.pass ? "" : ' <span class="tag no">ไม่ผ่าน</span>'}</small>${(s.today_deducted || []).length ? `<small class="today">⚠ วันนี้ถูกตัดแล้ว: ${s.today_deducted.map(esc).join(", ")}</small>` : ""}${(s.today_warned || []).length ? `<small class="today">⚠ วันนี้ตักเตือนแล้ว: ${s.today_warned.map(esc).join(", ")}</small>` : ""}</div>
+    <div class="nm"><b>${esc(s.name)}</b><small>${room ? `<span class="tag room">${esc(s.grade)}/${esc(s.room)}</span> ` : ""}${esc(s.code)}${s.left ? " · ย้ายออก" : ""}${s.deduct_count ? ` · ตัด ${s.deduct_count}` : ""}${s.add_count ? ` · เพิ่ม ${s.add_count}` : ""}${s.warn_count ? ` · เตือน ${s.warn_count}` : ""}${s.pass ? "" : ' <span class="tag no">ไม่ผ่าน</span>'}</small>${(s.today_deducted || []).length ? `<small class="today">⚠ วันนี้ถูกตัดแล้ว: ${s.today_deducted.map(esc).join(", ")}</small>` : ""}${(s.today_warned || []).length ? `<small class="today">⚠ วันนี้ตักเตือนแล้ว: ${s.today_warned.map(esc).join(", ")}</small>` : ""}${(s.today_referred || []).length ? `<small class="today ref">⏳ รอฝ่ายปกครอง: ${s.today_referred.map(esc).join(", ")}</small>` : ""}</div>
     ${ring(s.score)}
   </div>`;
 }
@@ -215,7 +217,7 @@ function updateSel() {
   $("selBar").hidden = !n || S.tab !== "room";
   $("selCount").textContent = `เลือก ${n} คน`;
 }
-const selTarget = () => { const st = S.students.filter((s) => S.sel.has(s.id)); return { ids: st.map((s) => s.id), grade: S.room.grade, room: S.room.room, names: st.map((s) => s.name), today: st.map((s) => [...(s.today_deducted || []), ...(s.today_warned || [])]) }; };
+const selTarget = () => { const st = S.students.filter((s) => S.sel.has(s.id)); return { ids: st.map((s) => s.id), grade: S.room.grade, room: S.room.room, names: st.map((s) => s.name), today: st.map((s) => [...(s.today_deducted || []), ...(s.today_warned || []), ...(s.today_referred || [])]) }; };
 $("bDeduct").onclick = () => openAction("deduct", selTarget());
 $("bAdd").onclick = () => openAction("add", selTarget());
 
@@ -239,7 +241,9 @@ function openAction(kind, target) {
   $("pCats").innerHTML = cats.length ? [`<button type="button" data-c="" class="on">ทั้งหมด</button>`, ...cats.map((c) => `<button type="button" data-c="${esc(c)}">${esc(c)}</button>`)].join("") : "";
   $("dReason").value = "";
   paintPresetBtns(); $("dAmount").value = "5"; lockAmount(); paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
-  $("dOk").className = `btn lg ${kind === "deduct" ? "danger" : "good"}`;
+  S.action.refer = false; $("dNote").value = "";
+  $("dReferBox").hidden = kind !== "deduct" || S.me.user.is_discipline;
+  paintZone();
   $("dlg").showModal();
 }
 function paintPresetBtns() {
@@ -280,14 +284,24 @@ document.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => {
 }));
 function paintZone() {
   const show = S.action?.kind === "deduct", p = Number($("dAmount").value) || 0;
+  // ส่งต่อฝ่ายปกครอง: หัก ≥ refer_min ส่งต่ออัตโนมัติ (ครูที่ไม่ใช่ฝ่ายปกครอง) · ต่ำกว่านั้นเลือกเองได้
+  const canRefer = show && !S.me.user.is_discipline, auto = canRefer && p >= S.me.refer_min;
+  const refer = canRefer && (auto || !!S.action?.refer);
+  $("dRefer").checked = refer; $("dRefer").disabled = auto;
+  $("dReferHint").textContent = auto ? `หัก ${S.me.refer_min} คะแนนขึ้นไป ระบบส่งต่อฝ่ายปกครองอัตโนมัติ — ยังไม่หักคะแนนจนกว่าฝ่ายปกครองพิจารณา` : "ฝ่ายปกครองเป็นผู้พิจารณาและกดหักคะแนน (ยังไม่หักทันที)";
+  $("dNoteBox").hidden = !refer;
+  $("dWarn").hidden = !show || !S.me.warn_n || refer;
+  $("dOk").textContent = refer ? "ส่งต่อฝ่ายปกครอง" : "บันทึก";
+  $("dOk").className = `btn lg ${refer ? "primary" : S.action?.kind === "add" ? "good" : "danger"}`;
   $("dZone").hidden = !show || p < 1;
   if (show && p >= 1) $("dZone").innerHTML = `โซน ${zoneTag(p)}`;
   // โซนปานกลางขึ้นไป: เลือกเองว่าจะตักเตือนหรือตัดคะแนนเลย (ไม่มีค่าเริ่มต้น)
-  const choose = show && p >= S.me.zones.mid;
+  const choose = show && !refer && p >= S.me.zones.mid;
   $("dModeBox").hidden = !choose;
   if (!choose) S.action && (S.action.mode = null);
   $("dMode").querySelectorAll("button").forEach((b) => b.classList.toggle("on", !!S.action && b.dataset.m === S.action.mode));
 }
+$("dRefer").onchange = () => { S.action.refer = $("dRefer").checked; paintZone(); };
 $("dMode").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.action.mode = b.dataset.m; paintZone(); };
 $("dAmount").oninput = paintZone;
 $("df").addEventListener("submit", async (e) => {
@@ -298,8 +312,9 @@ $("df").addEventListener("submit", async (e) => {
   $("dOk").disabled = true;
   try {
     const res = await api("/api/records", { method: "POST", body: { year: S.year, term: S.term, grade: a.grade, room: a.room,
-      kind: a.kind, amount: Number($("dAmount").value), reason: $("dReason").value, mode: a.mode || undefined, incident_date: $("dDate").value, student_ids: a.ids } });
-    const msg = [res.saved ? `${a.kind === "deduct" ? "ตัดคะแนน" : "บันทึกแล้ว"} ${res.saved} คน` : "", res.warned ? `ตักเตือน ${res.warned} คน` : "",
+      kind: a.kind, amount: Number($("dAmount").value), reason: $("dReason").value, mode: a.mode || undefined, incident_date: $("dDate").value, student_ids: a.ids,
+      refer: a.kind === "deduct" && $("dRefer").checked || undefined, note: $("dNote").value || undefined } });
+    const msg = [res.referred ? `ส่งต่อฝ่ายปกครอง ${res.referred} คน${res.auto ? " (อัตโนมัติ)" : ""}` : "",res.saved ? `${a.kind === "deduct" ? "ตัดคะแนน" : "บันทึกแล้ว"} ${res.saved} คน` : "", res.warned ? `ตักเตือน ${res.warned} คน` : "",
       res.skipped?.length ? `ข้าม ${res.skipped.length} คนที่บันทึกเรื่องนี้วันนี้แล้ว` : ""].filter(Boolean).join(" · ");
     $("dlg").close(); toast(msg);
     S.sel.clear(); await refresh();
@@ -310,6 +325,8 @@ async function refresh() {
   if (S.tab === "room") await loadRoom();
   if (S.tab === "overview") await loadOverview();
   if (S.tab === "stats") await loadStats();
+  if (S.tab === "refer") await loadRefer();
+  refreshBadge();
   if (S.hist && $("hist").open) await openHist(S.hist);
 }
 
@@ -321,27 +338,38 @@ async function openHist(t) {
   try { d = await api(`/api/records?${qs}`); } catch (e) { return toast(e.message); }
   const pass = d.score >= S.me.pass_min;
   $("hHead").innerHTML = `${ring(d.score)}<div><b>${esc(d.student.name)}</b><span class="muted">${esc(t.grade)}/${esc(t.room)} · เลขที่ ${d.student.number ?? "-"} · <span class="${pass ? "good" : "bad"}">${pass ? "ผ่าน" : "ไม่ผ่าน"}</span></span></div>`;
-  const today = [...new Set(d.records.filter((r) => !r.cancelled_at && (r.points < 0 || r.warn) && r.incident_date === S.me.today).map((r) => r.reason))];
+  const today = [...new Set(d.records.filter((r) => (r.referral ? r.status === "pending" : !r.cancelled_at && (r.points < 0 || r.warn)) && r.incident_date === S.me.today).map((r) => r.reason))];
   const dis = isOpen() ? "" : "disabled";
   $("hAct").innerHTML = `${today.length ? `<div class="today">⚠ วันนี้ถูกตัด/ตักเตือนแล้ว: ${today.map(esc).join(", ")}</div>` : ""}${dis ? `<div class="today">🔒 ${closedMsg()}</div>` : ""}<button class="btn danger" data-k="deduct" ${dis}>− ตัดคะแนน</button><button class="btn good" data-k="add" ${dis}>+ เพิ่มคะแนน</button>`;
   $("hAct").onclick = (e) => { const b = e.target.closest("[data-k]"); if (!b) return; openAction(b.dataset.k, { ids: [t.id], grade: t.grade, room: t.room, names: [d.student.name], today: [today] }); };
-  $("hBody").innerHTML = d.records.length ? d.records.map((r) => `<div class="rec ${r.cancelled_at ? "cx" : ""}">
+  S.histRecs = d.records;
+  $("hBody").innerHTML = d.records.length ? d.records.map((r) => r.referral ? refRec(r) : `<div class="rec ${r.cancelled_at ? "cx" : ""}">
       ${r.warn ? `<span class="pt warn">เตือน</span>` : `<span class="pt ${r.points < 0 ? "bad" : "good"}">${r.points > 0 ? "+" : ""}${r.points}</span>`}
-      <span class="tx"><span class="rs">${esc(r.reason)}${r.points < 0 ? zoneTag(r.points) : ""}</span><small>${thDate(r.incident_date)} · ${esc(r.created_by_name || "")}${r.cancelled_at ? ` · ยกเลิกโดย ${esc(r.cancelled_by_name || "")}: ${esc(r.cancel_reason)}` : ""}</small></span>
+      <span class="tx"><span class="rs">${esc(r.reason)}${r.points < 0 ? zoneTag(r.points) : ""}</span><small>${thDate(r.incident_date)} · ${r.referred_by_name ? `ส่งต่อโดย ${esc(r.referred_by_name)} · หักโดย ${esc(r.created_by_name || "")} (ฝ่ายปกครอง)` : esc(r.created_by_name || "")}${r.cancelled_at ? ` · ยกเลิกโดย ${esc(r.cancelled_by_name || "")}: ${esc(r.cancel_reason)}` : ""}</small></span>
       ${r.can_cancel ? `<button class="btn ghost" data-cx="${r.id}" data-warn="${r.warn ? 1 : ""}" data-what="${esc(r.warn ? `ตักเตือน: ${r.reason}` : `${r.points > 0 ? "+" : ""}${r.points} ${r.reason}`)}">ยกเลิก</button>` : ""}
     </div>`).join("") : `<div class="empty">ภาคเรียนนี้ยังไม่มีรายการ (${S.me.base} คะแนน)</div>`;
   if (!$("hist").open) $("hist").showModal();
 }
+const REF_ST = { pending: "รอพิจารณา", deducted: "หักคะแนนแล้ว", warned: "ตักเตือนแล้ว", rejected: "ไม่ดำเนินการ", cancelled: "ยกเลิกการส่งต่อ" };
+function refRec(r) {
+  return `<div class="rec ref ${r.status}">
+    <span class="pt refer">−${r.points}<small>ส่งต่อ</small></span>
+    <span class="tx"><span class="rs">${esc(r.reason)}${zoneTag(r.points)} <span class="tag st-${r.status}">${REF_ST[r.status]}</span></span><small>${thDate(r.incident_date)} · ส่งต่อโดย ${esc(r.created_by_name || "")}${r.auto ? " (อัตโนมัติ)" : ""}${r.note ? ` · ${esc(r.note)}` : ""}${r.decided_by_name ? ` · ${r.status === "rejected" ? "พิจารณาโดย" : "โดย"} ${esc(r.decided_by_name)}${r.decision_note ? `: ${esc(r.decision_note)}` : ""}` : ""}</small></span>
+    ${r.can_decide ? `<button class="btn primary" data-rd="${r.id}">พิจารณา</button>` : r.can_cancel ? `<button class="btn ghost" data-cx="${r.id}" data-ref="1" data-what="${esc(`ส่งต่อฝ่ายปกครอง: −${r.points} ${r.reason}`)}">ยกเลิก</button>` : ""}
+  </div>`;
+}
 $("hBody").onclick = (e) => {
+  const rd = e.target.closest("[data-rd]");
+  if (rd) { const r = S.histRecs.find((x) => x.referral && x.id === Number(rd.dataset.rd)); return r && openDecide({ ...r, name: $("hHead").querySelector("b")?.textContent || "", grade: S.hist.grade, room: S.hist.room, referred_by_name: r.created_by_name }); }
   const b = e.target.closest("[data-cx]"); if (!b) return;
-  S.cancelId = b.dataset.cx; S.cancelWarn = !!b.dataset.warn; $("cxWhat").textContent = b.dataset.what; $("cxReason").value = ""; $("cxerr").hidden = true;
+  S.cancelId = b.dataset.cx; S.cancelWarn = !!b.dataset.warn; S.cancelRef = !!b.dataset.ref; $("cxWhat").textContent = b.dataset.what; $("cxReason").value = ""; $("cxerr").hidden = true;
   $("cxDlg").showModal();
 };
 $("cxf").addEventListener("submit", async (e) => {
   if (e.submitter?.value !== "ok") return;
   e.preventDefault();
   $("cxOk").disabled = true;
-  try { await api(`/api/records/${S.cancelId}/cancel`, { method: "POST", body: { reason: $("cxReason").value, warn: S.cancelWarn } }); $("cxDlg").close(); toast("ยกเลิกแล้ว"); await refresh(); }
+  try { await api(S.cancelRef ? `/api/referrals/${S.cancelId}/cancel` : `/api/records/${S.cancelId}/cancel`, { method: "POST", body: { reason: $("cxReason").value, warn: S.cancelWarn } }); $("cxDlg").close(); toast("ยกเลิกแล้ว"); await refresh(); }
   catch (ex) { $("cxerr").textContent = ex.message; $("cxerr").hidden = false; }
   $("cxOk").disabled = false;
 });
@@ -445,6 +473,9 @@ function paintHours() {
   const z = S.me.zones;
   $("zoneTxt").textContent = `เล็กน้อย 1–${z.mid - 1} · ปานกลาง ${z.mid}–${z.high - 1} · รุนแรง ${z.high}–${z.severe - 1} · รุนแรงมาก ${z.severe}+`;
   $("zoneEdit").hidden = !edit;
+  $("referTxt").textContent = `หักตั้งแต่ ${S.me.refer_min} คะแนนขึ้นไป`;
+  $("referEdit").hidden = !edit;
+  if (edit) $("rMin").value = S.me.refer_min;
   if (edit) { $("zMid").value = z.mid; $("zHigh").value = z.high; $("zSev").value = z.severe; }
 }
 function paintPresets() {
@@ -476,6 +507,10 @@ $("zoneSave").onclick = async () => {
   try { const d = await api("/api/settings", { method: "PUT", body: { zones: { mid: Number($("zMid").value), high: Number($("zHigh").value), severe: Number($("zSev").value) } } }); S.me.zones = d.zones; paintHours(); paintPresets(); toast("บันทึกแล้ว"); }
   catch (e) { toast(e.message); }
 };
+$("referSave").onclick = async () => {
+  try { const d = await api("/api/settings", { method: "PUT", body: { refer_min: Number($("rMin").value) } }); S.me.refer_min = d.refer_min; paintHours(); toast("บันทึกแล้ว"); }
+  catch (e) { toast(e.message); }
+};
 $("warnSave").onclick = async () => {
   try { const d = await api("/api/settings", { method: "PUT", body: { warn_count: Number($("wN").value) } }); S.me.warn_n = d.warn_n; paintHours(); toast("บันทึกแล้ว"); }
   catch (e) { toast(e.message); }
@@ -484,5 +519,76 @@ $("hoursSave").onclick = async () => {
   try { const d = await api("/api/settings", { method: "PUT", body: { start: $("hStart").value, end: $("hEnd").value } }); S.me.hours = d.hours; paintHours(); paintOpen(); toast("บันทึกเวลาแล้ว"); }
   catch (e) { toast(e.message); }
 };
+
+// ---------- ส่งต่อฝ่ายปกครอง ----------
+S.refSt = "pending";
+function paintBadge() {
+  const n = S.me.user.is_discipline ? S.me.pending_referrals || 0 : 0;
+  $("refBadge").hidden = !n; $("refBadge").textContent = n > 99 ? "99+" : n;
+}
+async function refreshBadge() {
+  if (!S.me.user.is_discipline) return;
+  try { const d = await api(`/api/referrals?year=${S.year}&term=${S.term}&status=pending`); S.me.pending_referrals = d.referrals.length; paintBadge(); } catch { /* */ }
+}
+document.querySelectorAll("#refSeg button").forEach((b) => (b.onclick = () => { S.refSt = b.dataset.s; loadRefer(); }));
+async function loadRefer() {
+  document.querySelectorAll("#refSeg button").forEach((b) => b.classList.toggle("on", b.dataset.s === S.refSt));
+  $("refInfo").textContent = S.me.user.is_discipline
+    ? `หัก ${S.me.refer_min} คะแนนขึ้นไปส่งต่ออัตโนมัติ · ครูส่งต่อเองได้ · ท่านพิจารณาแล้วกดหัก/ตักเตือน ระบบบันทึกชื่อผู้ส่งและผู้หัก (กติกาเดิม: วันละครั้ง · โซนเล็กน้อยต้องตักเตือนครบ ${S.me.warn_n} ครั้งก่อน)`
+    : `พฤติกรรมที่หัก ${S.me.refer_min} คะแนนขึ้นไปส่งต่อฝ่ายปกครองอัตโนมัติ ยังไม่หักคะแนนจนกว่าฝ่ายปกครองพิจารณา`;
+  $("refList").innerHTML = `<div class="empty">กำลังโหลด…</div>`;
+  let d;
+  try { d = await api(`/api/referrals?year=${S.year}&term=${S.term}&status=${S.refSt}`); } catch (e) { $("refList").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  S.refs = d.referrals;
+  if (S.refSt === "pending" && S.me.user.is_discipline) { S.me.pending_referrals = d.referrals.length; paintBadge(); }
+  $("refList").innerHTML = d.referrals.length ? d.referrals.map((r) => `<div class="refcard ${r.status}" data-id="${r.id}">
+      <div class="rc-top"><span class="tag room">${esc(r.grade)}/${esc(r.room)}</span><b>${esc(r.name)}</b><span class="pts">−${r.points}</span></div>
+      <div class="rc-why">${esc(r.reason)} ${zoneTag(r.points)}</div>
+      <div class="rc-meta">${thDate(r.incident_date)} · ส่งต่อโดย <b>${esc(r.referred_by_name || "")}</b>${r.auto ? ' <span class="tag auto">อัตโนมัติ</span>' : ""}${r.note ? `<br>“${esc(r.note)}”` : ""}</div>
+      ${r.status !== "pending" ? `<div class="rc-res"><span class="tag st-${r.status}">${REF_ST[r.status]}</span> ${r.decided_by_name ? `โดย ${esc(r.decided_by_name)}` : ""}${r.decision_note ? ` · ${esc(r.decision_note)}` : ""}</div>` : ""}
+      ${r.can_decide || r.can_cancel ? `<div class="rc-act">${r.can_cancel ? `<button class="btn ghost" data-a="cancel">ยกเลิกการส่งต่อ</button>` : ""}${r.can_decide ? `<button class="btn primary" data-a="decide">พิจารณา</button>` : ""}</div>` : ""}
+    </div>`).join("") : `<div class="empty">${S.refSt === "pending" ? "✓ ไม่มีรายการรอพิจารณา" : "ยังไม่มีรายการ"}</div>`;
+}
+$("refList").onclick = (e) => {
+  const c = e.target.closest(".refcard"); if (!c) return;
+  const r = S.refs.find((x) => x.id === Number(c.dataset.id)); if (!r) return;
+  const a = e.target.closest("[data-a]")?.dataset.a;
+  if (a === "decide") return openDecide(r);
+  if (a === "cancel") { S.cancelId = r.id; S.cancelWarn = false; S.cancelRef = true; $("cxWhat").textContent = `ส่งต่อฝ่ายปกครอง: ${r.name} −${r.points} ${r.reason}`; $("cxReason").value = ""; $("cxerr").hidden = true; return $("cxDlg").showModal(); }
+  openHist({ id: r.student_id, grade: r.grade, room: r.room });
+};
+function openDecide(r) {
+  if (!isOpen()) return toast(closedMsg());
+  S.decide = { r, action: null };
+  const minor = r.points < S.me.zones.mid, wn = S.me.warn_n;
+  $("rdWho").innerHTML = `<b>${esc(r.name)}</b> · ${esc(r.grade)}/${esc(r.room)}<br><span class="muted">${esc(r.reason)} ${zoneTag(r.points)} · −${r.points} · ${thDate(r.incident_date)}<br>ส่งต่อโดย ${esc(r.referred_by_name || "")}${r.note ? ` · “${esc(r.note)}”` : ""}</span>`;
+  $("rdRule").hidden = !(minor && wn);
+  $("rdRule").textContent = `โซนเล็กน้อย: เรื่องนี้ต้องตักเตือนครบ ${wn} ครั้งก่อน${r.warn_count != null ? ` (ตักเตือนในภาคแล้ว ${r.warn_count} ครั้ง)` : ""} — ยังไม่ครบ ระบบบันทึกเป็นตักเตือน`;
+  $("rdNote").value = ""; $("rderr").hidden = true; paintDecide();
+  $("rdDlg").showModal();
+}
+function paintDecide() {
+  const a = S.decide.action;
+  $("rdSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.a === a));
+  $("rdNoteLbl").firstChild.textContent = a === "reject" ? "เหตุผลที่ไม่ดำเนินการ (จำเป็น)" : "หมายเหตุ (ถ้ามี)";
+  $("rdOk").textContent = a === "deduct" ? `หัก ${S.decide.r.points} คะแนน` : a === "warn" ? "ตักเตือน" : a === "reject" ? "ไม่ดำเนินการ" : "ยืนยัน";
+  $("rdOk").className = `btn lg ${a === "deduct" ? "danger" : a === "warn" ? "warnb" : a === "reject" ? "ghost" : "primary"}`;
+  $("rdOk").disabled = !a;
+}
+$("rdSeg").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.decide.action = b.dataset.a; paintDecide(); };
+$("rdf").addEventListener("submit", async (e) => {
+  if (e.submitter?.value !== "ok") return;
+  e.preventDefault();
+  const { r, action } = S.decide;
+  if (!action) return;
+  $("rdOk").disabled = true;
+  try {
+    const res = await api(`/api/referrals/${r.id}/decide`, { method: "POST", body: { action, note: $("rdNote").value } });
+    $("rdDlg").close();
+    toast(res.result === "deducted" ? `หัก ${r.points} คะแนนแล้ว` : res.result === "warned" ? (res.forced ? "ยังตักเตือนไม่ครบ — บันทึกเป็นตักเตือน" : "บันทึกตักเตือนแล้ว") : "บันทึกไม่ดำเนินการแล้ว");
+    await refresh();
+  } catch (ex) { $("rderr").textContent = ex.message; $("rderr").hidden = false; }
+  $("rdOk").disabled = false;
+});
 
 boot();

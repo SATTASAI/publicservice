@@ -41,6 +41,22 @@ const STATEMENTS = [
     cancelled_at TEXT, cancelled_by INTEGER, cancel_reason TEXT)`,
   `CREATE INDEX IF NOT EXISTS idx_ps_warn_student ON ps_behavior_warnings(academic_year_id, student_id, term_number)`,
   `CREATE INDEX IF NOT EXISTS idx_ps_warn_day ON ps_behavior_warnings(student_id, incident_date)`,
+  // ส่งต่อฝ่ายปกครองพิจารณา: หัก ≥ refer_min (ค่าเริ่มต้น 10) ส่งต่ออัตโนมัติ หรือครูกดส่งต่อเอง
+  // ยังไม่หักคะแนนจนกว่าครูฝ่ายปกครองกด (record_id/warning_id = รายการที่เกิดขึ้น · decided_by = ครูฝ่ายปกครองที่กด)
+  `CREATE TABLE IF NOT EXISTS ps_referrals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    academic_year_id INTEGER NOT NULL,
+    term_number INTEGER NOT NULL CHECK (term_number IN (1, 2)),
+    student_id INTEGER NOT NULL, grade_level TEXT, classroom TEXT,
+    points INTEGER NOT NULL CHECK (points BETWEEN 1 AND 100),
+    reason TEXT NOT NULL, incident_date TEXT, note TEXT, auto INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'deducted', 'warned', 'rejected', 'cancelled')),
+    referred_by INTEGER NOT NULL, referred_at TEXT NOT NULL DEFAULT (datetime('now')),
+    decided_by INTEGER, decided_at TEXT, decision_note TEXT, record_id INTEGER, warning_id INTEGER)`,
+  `CREATE INDEX IF NOT EXISTS idx_ps_ref_status ON ps_referrals(status, academic_year_id, term_number)`,
+  `CREATE INDEX IF NOT EXISTS idx_ps_ref_day ON ps_referrals(student_id, incident_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_ps_ref_record ON ps_referrals(record_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_ps_ref_warning ON ps_referrals(warning_id)`,
 ];
 
 const ready = new WeakMap();
