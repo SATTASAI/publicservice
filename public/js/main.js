@@ -315,7 +315,7 @@ $("df").addEventListener("submit", async (e) => {
     $("dOk").disabled = true;
     try {
       const res = await api("/api/merits", { method: "POST", body: { year: S.year, term: S.term, grade: a.grade, room: a.room, category: $("dReason").value, detail: $("dDetail").value, incident_date: $("dDate").value, student_ids: a.ids } });
-      $("dlg").close(); toast(res.approved ? `บันทึกความดีและเพิ่มคะแนน ${res.approved} คน` : `บันทึกความดี ${res.saved} คน · รอฝ่ายปกครองอนุมัติ`);
+      $("dlg").close(); toast(S.me.user.is_discipline ? [`บันทึกความดี ${res.saved} คน`, res.approved ? `เพิ่มคะแนน ${res.approved} คน` : "", res.full ? `คะแนนเต็ม 100 ค้างรออนุมัติ ${res.full} คน` : ""].filter(Boolean).join(" · ") : `บันทึกความดี ${res.saved} คน · รอฝ่ายปกครองอนุมัติ`);
       S.sel.clear(); await refresh();
     } catch (ex) { $("derr").textContent = ex.message; $("derr").hidden = false; }
     $("dOk").disabled = false;
@@ -355,7 +355,7 @@ async function openHist(t) {
   const dis = isOpen() ? "" : "disabled";
   $("hAct").innerHTML = `${today.length ? `<div class="today">⚠ วันนี้ถูกตัด/ตักเตือนแล้ว: ${today.map(esc).join(", ")}</div>` : ""}${dis ? `<div class="today">🔒 ${closedMsg()}</div>` : ""}<button class="btn danger" data-k="deduct" ${dis}>− ตัดคะแนน</button><button class="btn good" data-k="add" ${dis}>+ บันทึกความดี</button>`;
   $("hAct").onclick = (e) => { const b = e.target.closest("[data-k]"); if (!b) return; openAction(b.dataset.k, { ids: [t.id], grade: t.grade, room: t.room, names: [d.student.name], today: [today] }); };
-  S.histRecs = d.records;
+  S.histRecs = d.records; S.histScore = d.score;
   $("hBody").innerHTML = d.records.length ? d.records.map((r) => r.merit ? meritRec(r) : r.referral ? refRec(r) : `<div class="rec ${r.cancelled_at ? "cx" : ""}">
       ${r.warn ? `<span class="pt warn">เตือน</span>` : `<span class="pt ${r.points < 0 ? "bad" : "good"}">${r.points > 0 ? "+" : ""}${r.points}</span>`}
       <span class="tx"><span class="rs">${esc(r.reason)}${r.points < 0 ? zoneTag(r.points) : ""}</span><small>${thDate(r.incident_date)} · ${r.referred_by_name ? `ส่งต่อโดย ${esc(r.referred_by_name)} · หักโดย ${esc(r.created_by_name || "")} (ฝ่ายปกครอง)` : esc(r.created_by_name || "")}${r.cancelled_at ? ` · ยกเลิกโดย ${esc(r.cancelled_by_name || "")}: ${esc(r.cancel_reason)}` : ""}</small></span>
@@ -381,7 +381,7 @@ function meritRec(r) {
 }
 $("hBody").onclick = (e) => {
   const md = e.target.closest("[data-md]");
-  if (md) { const r = S.histRecs.find((x) => x.merit && x.id === Number(md.dataset.md)); return r && openMerit({ ...r, category: r.reason, date: r.incident_date, name: $("hHead").querySelector("b")?.textContent || "", grade: S.hist.grade, room: S.hist.room }); }
+  if (md) { const r = S.histRecs.find((x) => x.merit && x.id === Number(md.dataset.md)); return r && openMerit({ ...r, score: S.histScore, category: r.reason, date: r.incident_date, name: $("hHead").querySelector("b")?.textContent || "", grade: S.hist.grade, room: S.hist.room }); }
   const rd = e.target.closest("[data-rd]");
   if (rd) { const r = S.histRecs.find((x) => x.referral && x.id === Number(rd.dataset.rd)); return r && openDecide({ ...r, name: $("hHead").querySelector("b")?.textContent || "", grade: S.hist.grade, room: S.hist.room, referred_by_name: r.created_by_name }); }
   const b = e.target.closest("[data-cx]"); if (!b) return;
@@ -645,26 +645,32 @@ async function loadMerits() {
   S.merits = d.merits;
   if (S.refSt === "pending" && S.me.user.is_discipline) { S.me.pending_merits = d.merits.length; paintBadge(); $("refKind").querySelector("[data-k=merit] em").textContent = d.merits.length || ""; }
   $("refList").innerHTML = d.merits.length ? d.merits.map((m) => `<div class="refcard merit ${m.status}" data-m="${m.id}">
-      <div class="rc-top"><span class="tag room">${esc(m.grade)}/${esc(m.room)}</span><b>${esc(m.name)}</b><span class="pts good">+${m.points}</span></div>
+      <div class="rc-top"><span class="tag room">${esc(m.grade)}/${esc(m.room)}</span><b>${esc(m.name)}</b><span class="pts good">+${meritGain(m)}</span></div>
       <div class="rc-why">${esc(m.category)}${m.detail ? ` <span class="muted">— ${esc(m.detail)}</span>` : ""}</div>
       <div class="rc-meta">${thDate(m.date)} · บันทึกโดย <b>${esc(m.created_by_name || "")}</b></div>
       ${m.status !== "pending" ? `<div class="rc-res"><span class="tag mst-${m.status}">${MER_ST[m.status]}</span> ${m.decided_by_name ? `โดย ${esc(m.decided_by_name)}` : ""}${m.note ? ` · ${esc(m.note)}` : ""}</div>` : ""}
+      ${m.can_decide && meritGain(m) < m.points ? `<div class="rc-meta full">${meritGain(m) ? `คะแนนปัจจุบัน ${m.score} — เพิ่มได้แค่ +${meritGain(m)} ให้ครบ 100` : "คะแนนเต็ม 100 — ค้างรออนุมัติไว้จนกว่าคะแนนจะลดลง"}</div>` : ""}
       ${m.can_decide ? `<div class="rc-act"><button class="btn primary" data-a="decide">พิจารณา</button></div>` : ""}
     </div>`).join("") : `<div class="empty">${S.refSt === "pending" ? "✓ ไม่มีความดีรออนุมัติ" : "ยังไม่มีรายการ"}</div>`;
 }
+const meritGain = (m) => m.status !== "pending" || m.score == null ? m.points : Math.max(0, Math.min(m.points, 100 - m.score));
 function openMerit(m) {
   if (!isOpen()) return toast(closedMsg());
   S.merit = { m, action: null };
   $("mdWho").innerHTML = `<b>${esc(m.name)}</b> · ${esc(m.grade)}/${esc(m.room)}<br><span class="muted">${esc(m.category)}${m.detail ? ` — ${esc(m.detail)}` : ""} · ${thDate(m.date)}<br>บันทึกโดย ${esc(m.created_by_name || "")}</span>`;
+  const g = meritGain(m);
+  $("mdFull").hidden = g >= m.points;
+  $("mdFull").textContent = g ? `คะแนนปัจจุบัน ${m.score} สะสมได้ไม่เกิน 100 — อนุมัติแล้วเพิ่มได้แค่ +${g}` : "คะแนนพฤติกรรมเต็ม 100 แล้ว เพิ่มคะแนนไม่ได้ — ค้างรออนุมัติไว้ หรือกดไม่อนุมัติ";
   $("mdNote").value = ""; $("mderr").hidden = true; paintMerit();
   $("mdDlg").showModal();
 }
 function paintMerit() {
   const a = S.merit.action;
   $("mdSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.a === a));
-  $("mdSeg").querySelector("[data-a=approve]").textContent = `อนุมัติ +${S.merit.m.points}`;
+  const g = meritGain(S.merit.m), ap = $("mdSeg").querySelector("[data-a=approve]");
+  ap.textContent = g ? `อนุมัติ +${g}` : "อนุมัติ (เต็ม 100)"; ap.disabled = !g;
   $("mdNoteLbl").firstChild.textContent = a === "reject" ? "เหตุผลที่ไม่อนุมัติ (จำเป็น)" : "หมายเหตุ (ถ้ามี)";
-  $("mdOk").textContent = a === "approve" ? `เพิ่ม ${S.merit.m.points} คะแนน` : a === "reject" ? "ไม่อนุมัติ" : "ยืนยัน";
+  $("mdOk").textContent = a === "approve" ? `เพิ่ม ${g} คะแนน` : a === "reject" ? "ไม่อนุมัติ" : "ยืนยัน";
   $("mdOk").className = `btn lg ${a === "approve" ? "good" : a === "reject" ? "ghost" : "primary"}`;
   $("mdOk").disabled = !a;
 }
