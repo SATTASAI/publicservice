@@ -266,3 +266,11 @@ dialog.sheet h2 { margin: 0 0 .2rem; font-size: 1.2rem; font-weight: 700; }
 @keyframes pop { from { transform: scale(.96); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 @media print { .appbar, .nav, .fab, .search, .chips-scroll, .listhead { display: none !important; } .shell { padding: 0; } .st { border: 1px solid #ddd; break-inside: avoid; } }
+
+/* ความดีรออนุมัติ */
+.refcard.merit { border-left-color: var(--good); } .refcard.merit.rejected { border-left-color: var(--line2); }
+.rc-top .pts.good { color: var(--good); }
+.tag.mst-pending { background: var(--goodsoft); color: var(--good); } .tag.mst-approved { background: var(--good); color: #fff; } .tag.mst-rejected { background: var(--sunk); color: var(--muted); }
+.rec .pt.good small { display: block; font-size: .64rem; font-weight: 600; }
+.seg.kinds button em { font-style: normal; font-size: .7rem; background: var(--bad); color: #fff; border-radius: 999px; padding: 0 .4rem; margin-left: .2rem; }
+.seg.kinds button em:empty { display: none; }

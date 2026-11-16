@@ -78,6 +78,7 @@
 
     <!-- ส่งต่อฝ่ายปกครองพิจารณา -->
     <section id="refer" class="page" hidden>
+      <div class="seg wide kinds" id="refKind"><button data-k="deduct" class="on">ส่งต่อตัดคะแนน <em></em></button><button data-k="merit">ความดีรออนุมัติ <em></em></button></div>
       <div class="seg wide" id="refSeg"><button data-s="pending" class="on">รอพิจารณา</button><button data-s="done">ดำเนินการแล้ว</button></div>
       <div class="info" id="refInfo"></div>
       <div class="cards" id="refList"></div>
@@ -132,6 +133,11 @@
         <div class="group" id="presetList"></div>
         <div class="group"><div class="item"><span class="hours"><input id="pCat" list="pCatList" maxlength="40" placeholder="หมวด" aria-label="หมวด"><datalist id="pCatList"></datalist> <input id="pReason" maxlength="100" placeholder="ข้อพฤติกรรมใหม่ / ชื่อเดิมเพื่อแก้คะแนน" aria-label="ข้อพฤติกรรม"> −<input type="number" id="pPoints" min="1" max="100" value="5" inputmode="numeric" aria-label="คะแนนที่ตัด"></span><button class="btn primary" id="pAdd">เพิ่ม</button></div></div>
       </div>
+      <div id="meritSec" hidden>
+        <h3 class="sec">คะแนนความดีแต่ละประเภท <small>(เมื่อฝ่ายปกครองอนุมัติ)</small></h3>
+        <div class="group" id="meritList"></div>
+        <button class="btn primary block" id="meritSave">บันทึกคะแนนความดี</button>
+      </div>
       <button class="btn danger-soft block lg" id="logout">ออกจากระบบ</button>
     </section>
   </main>
@@ -140,7 +146,7 @@
     <button class="x" id="selClear" aria-label="ยกเลิกการเลือก">✕</button>
     <span id="selCount"></span>
     <button class="btn danger" id="bDeduct">− ตัดคะแนน</button>
-    <button class="btn good" id="bAdd">+ เพิ่ม</button>
+    <button class="btn good" id="bAdd">+ ความดี</button>
   </div>
 </div>
 
@@ -165,7 +171,9 @@
       <div class="chips-scroll" id="pCats"></div>
     </div>
     <div class="presets" id="dPresets"></div>
-    <label class="field">เหตุผล<input name="reason" id="dReason" required maxlength="300" placeholder="เลือกด้านบน หรือพิมพ์เอง"></label>
+    <div class="info" id="dMerit" hidden></div>
+    <label class="field" id="dReasonBox">เหตุผล<input name="reason" id="dReason" maxlength="300" placeholder="เลือกด้านบน หรือพิมพ์เอง"></label>
+    <label class="field" id="dDetailBox" hidden>รายละเอียดความดี (ถ้ามี)<input id="dDetail" maxlength="500" placeholder="เช่น ช่วยครูยกของ"></label>
     <div class="field">จำนวนคะแนน
       <div class="stepper"><button type="button" data-step="-1">−</button><input name="amount" id="dAmount" type="number" min="1" max="100" required inputmode="numeric"><button type="button" data-step="1">+</button></div>
     </div>
@@ -214,6 +222,19 @@
     <label class="field" id="rdNoteLbl">หมายเหตุ (ถ้ามี)<input id="rdNote" maxlength="300"></label>
     <div class="err" id="rderr" hidden></div>
     <div class="sheet-act"><button value="cancel" formnovalidate class="btn ghost lg">ปิด</button><button value="ok" class="btn primary lg" id="rdOk" disabled>ยืนยัน</button></div>
+  </form>
+</dialog>
+
+<!-- ฝ่ายปกครองอนุมัติความดี -->
+<dialog id="mdDlg" class="sheet">
+  <form method="dialog" id="mdf">
+    <div class="grab"></div>
+    <h2>อนุมัติเพิ่มคะแนนความดี</h2>
+    <p id="mdWho"></p>
+    <div class="field">ผลพิจารณา<div class="seg" id="mdSeg"><button type="button" data-a="approve">อนุมัติ</button><button type="button" data-a="reject">ไม่อนุมัติ</button></div></div>
+    <label class="field" id="mdNoteLbl">หมายเหตุ (ถ้ามี)<input id="mdNote" maxlength="300"></label>
+    <div class="err" id="mderr" hidden></div>
+    <div class="sheet-act"><button value="cancel" formnovalidate class="btn ghost lg">ปิด</button><button value="ok" class="btn primary lg" id="mdOk" disabled>ยืนยัน</button></div>
   </form>
 </dialog>
 
