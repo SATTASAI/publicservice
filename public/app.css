@@ -50,8 +50,11 @@ button { font: inherit; color: inherit; }
 .auth-card h2 { margin: 0; font-size: 1.25rem; } .auth-card .btn { margin-top: 1rem; }
 
 /* ---------- โครงแอป ---------- */
-.shell { min-height: 100%; }
-.appbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: .7rem; padding: calc(var(--safe-t) + .65rem) 1rem .65rem;
+/* โครงแอปแบบตายตัวเต็มจอ: เลื่อนเฉพาะเนื้อหา แถบล่างเป็นส่วนหนึ่งของ layout (ไม่ใช้ position: fixed)
+   — กันแถบล่างกระเด้ง/ลอยขึ้นบน iOS (rubber-band, เปิด-ปิด bottom sheet, แอปแบบติดตั้ง) */
+html, body { overscroll-behavior: none; }
+.shell { position: fixed; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); height: 100dvh; overflow: hidden; }
+.appbar { grid-row: 1; position: relative; z-index: 20; display: flex; align-items: center; gap: .7rem; padding: calc(var(--safe-t) + .65rem) 1rem .65rem;
   background: var(--pri-d); color: #fff; }
 .appbar img { width: 36px; height: 36px; border-radius: 50%; background: #fff; padding: 2px; }
 .appbar .ttl { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
@@ -59,14 +62,23 @@ button { font: inherit; color: inherit; }
 .appbar .ttl small { color: #a9cfca; font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .period { border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.08); color: #fff; font-weight: 600; font-size: .82rem; padding: .38rem .75rem; border-radius: 999px; cursor: pointer; white-space: nowrap; }
 .period::after { content: " ▾"; opacity: .7; }
-.content { max-width: 780px; margin: 0 auto; padding: 1rem 1rem calc(var(--nav-h) + var(--safe-b) + 6rem); }
+.content { grid-row: 2; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
+  padding: 1rem max(1rem, calc((100% - 780px) / 2 + 1rem)) 6rem; }
 
-.nav { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-around; height: calc(var(--nav-h) + var(--safe-b)); padding: 0 .25rem var(--safe-b);
+.nav { grid-row: 3; position: relative; z-index: 30; display: flex; justify-content: space-around; height: calc(var(--nav-h) + var(--safe-b)); padding: 0 .25rem var(--safe-b);
   background: rgba(255,255,255,.96); backdrop-filter: saturate(180%) blur(14px); -webkit-backdrop-filter: saturate(180%) blur(14px); border-top: 1px solid var(--line); }
-.nav button { position: relative; flex: 1; min-width: 0; border: 0; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #8a9893; font-size: .7rem; font-weight: 600; cursor: pointer; }
-.nav svg { width: 24px; height: 24px; fill: currentColor; padding: 4px 16px; box-sizing: content-box; border-radius: 999px; transition: background .2s, color .2s; }
-.nav button.on { color: var(--pri); } .nav button.on svg { background: var(--prisoft); }
-.nav span { white-space: nowrap; }
+.nav button { position: relative; flex: 1; min-width: 0; border: 0; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  color: #8a9893; font-size: .7rem; font-weight: 600; cursor: pointer; transition: color .25s var(--ease); }
+/* แคปซูลหลังไอคอน: ขยายจากตรงกลางเมื่อเลือก */
+.nav button::before { content: ""; position: absolute; top: calc(50% - 26px); left: 50%; width: 56px; height: 32px; margin-left: -28px; border-radius: 999px;
+  background: var(--prisoft); transform: scaleX(.3); opacity: 0; transition: transform .32s var(--ease), opacity .2s; }
+.nav svg { position: relative; width: 24px; height: 24px; fill: currentColor; padding: 4px 16px; box-sizing: content-box; transition: transform .25s var(--ease); }
+.nav span { position: relative; white-space: nowrap; transition: transform .25s var(--ease); }
+.nav button.on { color: var(--pri); }
+.nav button.on::before { transform: scaleX(1); opacity: 1; }
+.nav button.on svg { transform: translateY(-1px); }
+.nav button:active svg { transform: scale(.86); transition-duration: .08s; }
+.nav button:active::before { transform: scaleX(.88); opacity: 1; transition-duration: .08s; }
 .badge { position: absolute; top: 6px; left: calc(50% + 6px); min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px; background: var(--bad); color: #fff; font: 700 .68rem/19px "IBM Plex Sans Thai", sans-serif; font-style: normal; text-align: center; box-shadow: 0 0 0 2px #fff; }
 
 /* ---------- ส่วนประกอบ ---------- */
@@ -250,12 +262,14 @@ dialog.sheet h2 { margin: 0 0 .2rem; font-size: 1.2rem; font-weight: 700; }
 /* ---------- จอใหญ่: แถบนำทางด้านซ้าย + sheet กลางจอ ---------- */
 @media (min-width: 900px) {
   :root { --nav-h: 0px; }
-  .shell { padding-left: 100px; }
+  .shell { grid-template-columns: 100px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .appbar, .content { grid-column: 2; }
+  .nav { grid-row: 1 / 3; grid-column: 1; }
   .appbar { padding-left: 1.5rem; }
-  .nav { top: 0; right: auto; width: 100px; height: 100%; flex-direction: column; justify-content: flex-start; gap: .35rem; padding: 5rem .4rem 0; border-top: 0; border-right: 1px solid var(--line); background: #fff; }
+  .nav { width: 100px; height: 100%; flex-direction: column; justify-content: flex-start; gap: .35rem; padding: 5rem .4rem 0; border-top: 0; border-right: 1px solid var(--line); background: #fff; }
   .nav button { flex: none; height: 66px; font-size: .74rem; }
   .badge { top: 4px; }
-  .content { padding: 1.5rem 1.5rem 7rem; }
+  .content { padding: 1.5rem max(1.5rem, calc((100% - 780px) / 2)) 7rem; }
   .rooms { grid-template-columns: repeat(3, 1fr); }
   .fab { left: 100px; bottom: 1.2rem; }
   .toast { bottom: 1.5rem; }
@@ -265,7 +279,7 @@ dialog.sheet h2 { margin: 0 0 .2rem; font-size: 1.2rem; font-weight: 700; }
 }
 @keyframes pop { from { transform: scale(.96); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
-@media print { .appbar, .nav, .fab, .search, .chips-scroll, .listhead { display: none !important; } .shell { padding: 0; } .st { border: 1px solid #ddd; break-inside: avoid; } }
+@media print { .appbar, .nav, .fab, .search, .chips-scroll, .listhead { display: none !important; } .shell { position: static; display: block; height: auto; overflow: visible; } .content { overflow: visible; } .st { border: 1px solid #ddd; break-inside: avoid; } }
 
 /* ความดีรออนุมัติ */
 .refcard.merit { border-left-color: var(--good); } .refcard.merit.rejected { border-left-color: var(--line2); }

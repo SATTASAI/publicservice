@@ -74,7 +74,7 @@ function go(tab) {
   for (const id of ["overview", "room", "refer", "stats", "staff", "me"]) $(id).hidden = id !== tab;
   $("pageTitle").textContent = TITLES[tab];
   clearSel();
-  window.scrollTo(0, 0);
+  document.querySelector(".content").scrollTo(0, 0);
   if (tab === "overview") loadOverview();
   if (tab === "room") { fillRoomChips(); loadRoom(); }
   if (tab === "stats") { fillStatRooms(); loadStats(); }
