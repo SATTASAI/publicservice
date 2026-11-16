@@ -321,3 +321,5 @@ dialog.sheet h2 { margin: 0 0 .2rem; font-size: 1.2rem; font-weight: 700; }
   --pri-l:#7c1c29; --pri-x:#2b060c; --on-dark:#e5b9be; --on-dark2:#f2d9dc; --shade:78 15 24; }
 /* เปลี่ยนธีมแบบนุ่มนวล */
 .appbar, .hero, .btn.primary, .nav, body { transition: background-color .5s, color .3s; }
+.rc-meta.full { color: #96600d; font-weight: 600; margin-top: .3rem; }
+.seg button:disabled { opacity: .4; cursor: not-allowed; }

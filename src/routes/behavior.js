@@ -642,8 +642,12 @@ export async function handleReferrals(request, env, user, parts, method, url) {
 const MERIT_PENDING = "NOT EXISTS (SELECT 1 FROM ps_merit_reviews v2 WHERE v2.deed_id = g.id) AND (g.ps_record_id IS NULL OR EXISTS (SELECT 1 FROM ps_behavior_records p2 WHERE p2.id = g.ps_record_id AND p2.cancelled_at IS NOT NULL))";
 const meritReason = (g) => `ทำความดี: ${g.category}${g.detail ? ` — ${g.detail}` : ""}`.slice(0, 300);
 
+// คะแนนสะสมได้ไม่เกิน 100: เต็มแล้ว = ค้างรออนุมัติ (คืน 0) · ใกล้เต็ม = เพิ่มเท่าที่ขาด
 async function approveMerit(env, user, g, yearId, note) {
-  const pts = (await getMeritPoints(env)).find((x) => x.cat === g.category) || { points: MERIT_DEFAULT.at(-1)[1] };
+  const cat = (await getMeritPoints(env)).find((x) => x.cat === g.category) || { points: MERIT_DEFAULT.at(-1)[1] };
+  const score = (await scores(env, yearId, g.term, [g.student_id]))[g.student_id]?.score ?? BASE_SCORE;
+  const pts = { points: Math.min(cat.points, BASE_SCORE - score) };
+  if (pts.points <= 0) return 0;
   const r = await env.DB.prepare("INSERT INTO ps_behavior_records (academic_year_id, term_number, student_id, points, reason, incident_date, created_by) VALUES (?,?,?,?,?,?,?) RETURNING id")
     .bind(yearId, g.term, g.student_id, pts.points, meritReason(g), g.deed_date, user.id).first();
   await env.DB.batch([
@@ -676,10 +680,11 @@ export async function handleMerits(request, env, user, parts, method, url) {
         ORDER BY ${done ? "v.decided_at DESC" : "g.deed_date, g.id"} LIMIT 500`
     ).bind(year.year_be, term).all().catch(() => ({ results: [] }));
     const mp = await getMeritPoints(env);
-    return json({ year, term, merit_points: mp, merits: results.filter((g) => who.has(g.student_id)).map((g) => ({ ...who.get(g.student_id), id: g.id, student_id: g.student_id,
+    const sc = done ? {} : await scores(env, year.id, term, [...new Set(results.map((g) => g.student_id))]);
+    return json({ year, term, base: BASE_SCORE, merit_points: mp, merits: results.filter((g) => who.has(g.student_id)).map((g) => ({ ...who.get(g.student_id), id: g.id, student_id: g.student_id,
       date: g.deed_date, category: g.category, detail: g.detail, created_by_name: g.created_by_name, status: g.status || "pending",
       points: g.got_points ?? (mp.find((x) => x.cat === g.category) || mp.at(-1)).points, note: g.note, decided_by_name: g.decided_by_name,
-      can_decide: !g.status && !!user.is_discipline })) });
+      score: sc[g.student_id]?.score ?? BASE_SCORE, can_decide: !g.status && !!user.is_discipline })) });
   }
   if (method === "POST" && !parts[2]) {
     await requireOpen(env);
@@ -696,14 +701,14 @@ export async function handleMerits(request, env, user, parts, method, url) {
     if (!ids.length) fail(400, "เลือกนักเรียนอย่างน้อย 1 คน");
     const active = new Set(roster.filter((r) => !LEFT_STATUSES.includes(r.enrollment_status)).map((r) => r.id));
     for (const id of ids) if (!active.has(id)) fail(400, "มีนักเรียนที่ไม่อยู่ในห้องนี้ หรือย้ายออกแล้ว");
-    let approved = 0;
+    let approved = 0, full = 0;
     for (const sid of ids) {
       const g = await env.DB.prepare("INSERT INTO good_deeds (student_id, deed_date, category, detail, academic_year, term, created_by) VALUES (?,?,?,?,?,?,?) RETURNING *")
         .bind(sid, date, b.category, detail, Number(year.year_be), term, user.id).first();
-      if (user.is_discipline) { await approveMerit(env, user, g, year.id, ""); approved++; }
+      if (user.is_discipline) { if (await approveMerit(env, user, g, year.id, "")) approved++; else full++; }
     }
     await audit(env, user, "merit.add", { grade, room, term, category: b.category, students: ids, approved });
-    return json({ ok: true, saved: ids.length, approved });
+    return json({ ok: true, saved: ids.length, approved, full });
   }
   if (method === "POST" && parts[3] === "decide") {
     if (!user.is_discipline) fail(403, "เฉพาะครูฝ่ายปกครองอนุมัติเพิ่มคะแนนได้");
@@ -723,6 +728,7 @@ export async function handleMerits(request, env, user, parts, method, url) {
     }
     if (b.action !== "approve") fail(400, "เลือก อนุมัติ หรือ ไม่อนุมัติ");
     const pts = await approveMerit(env, user, g, yr.id, note);
+    if (!pts) fail(409, `คะแนนพฤติกรรมเต็ม ${BASE_SCORE} แล้ว เพิ่มไม่ได้ — รายการนี้ค้างรออนุมัติไว้ (ยังเป็นบันทึกความดี)`);
     await audit(env, user, "merit.approve", { id, points: pts });
     return json({ ok: true, result: "approved", points: pts });
   }
