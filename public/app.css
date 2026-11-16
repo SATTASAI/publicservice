@@ -11,7 +11,7 @@
   --shadow:0 1px 0 rgba(20,33,31,.04), 0 1px 3px rgba(20,33,31,.06);
   --shadow-lg:0 18px 44px rgba(11,63,61,.18);
   --safe-b:env(safe-area-inset-bottom, 0px); --safe-t:env(safe-area-inset-top, 0px);
-  --nav-h:66px; --ease:cubic-bezier(.2,.9,.3,1);
+  --nav-h:84px; --bar-h:62px; --ease:cubic-bezier(.2,.9,.3,1);
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; }
@@ -53,7 +53,7 @@ button { font: inherit; color: inherit; }
 /* โครงแอปแบบตายตัวเต็มจอ: เลื่อนเฉพาะเนื้อหา แถบล่างเป็นส่วนหนึ่งของ layout (ไม่ใช้ position: fixed)
    — กันแถบล่างกระเด้ง/ลอยขึ้นบน iOS (rubber-band, เปิด-ปิด bottom sheet, แอปแบบติดตั้ง) */
 html, body { overscroll-behavior: none; }
-.shell { position: fixed; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); height: 100dvh; overflow: hidden; }
+.shell { position: fixed; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); height: 100dvh; overflow: hidden; }
 .appbar { grid-row: 1; position: relative; z-index: 20; display: flex; align-items: center; gap: .7rem; padding: calc(var(--safe-t) + .65rem) 1rem .65rem;
   background: var(--pri-d); color: #fff; }
 .appbar img { width: 36px; height: 36px; border-radius: 50%; background: #fff; padding: 2px; }
@@ -63,23 +63,28 @@ html, body { overscroll-behavior: none; }
 .period { border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.08); color: #fff; font-weight: 600; font-size: .82rem; padding: .38rem .75rem; border-radius: 999px; cursor: pointer; white-space: nowrap; }
 .period::after { content: " ▾"; opacity: .7; }
 .content { grid-row: 2; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
-  padding: 1rem max(1rem, calc((100% - 780px) / 2 + 1rem)) 6rem; }
+  padding: 1rem max(1rem, calc((100% - 780px) / 2 + 1rem)) calc(var(--nav-h) + var(--safe-b) + 5rem); }
 
-.nav { grid-row: 3; position: relative; z-index: 30; display: flex; justify-content: space-around; height: calc(var(--nav-h) + var(--safe-b)); padding: 0 .25rem var(--safe-b);
-  background: rgba(255,255,255,.96); backdrop-filter: saturate(180%) blur(14px); -webkit-backdrop-filter: saturate(180%) blur(14px); border-top: 1px solid var(--line); }
-.nav button { position: relative; flex: 1; min-width: 0; border: 0; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  color: #8a9893; font-size: .7rem; font-weight: 600; cursor: pointer; transition: color .25s var(--ease); }
+/* แถบล่างลอยแบบ IG: แคปซูลโปร่งแสงลอยเหนือเนื้อหา (absolute ภายใน .shell ที่ตรึงเต็มจอ — ไม่กระเด้งบน iOS) */
+.nav { position: absolute; z-index: 30; left: 12px; right: 12px; bottom: calc(var(--safe-b) + 10px); max-width: 560px; margin: 0 auto;
+  display: flex; justify-content: space-around; height: var(--bar-h); padding: 0 6px; border-radius: 999px;
+  background: rgba(255,255,255,.78); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid rgba(255,255,255,.6); box-shadow: 0 10px 30px rgba(11,63,61,.18), 0 2px 6px rgba(11,63,61,.08), inset 0 0 0 .5px rgba(20,33,31,.06);
+  animation: navin .45s var(--ease); }
+@keyframes navin { from { transform: translateY(calc(100% + 20px)); opacity: 0; } }
+.nav button { position: relative; flex: 1; min-width: 0; border: 0; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  color: #7c8a86; font-size: .64rem; font-weight: 600; cursor: pointer; transition: color .25s var(--ease); }
 /* แคปซูลหลังไอคอน: ขยายจากตรงกลางเมื่อเลือก */
-.nav button::before { content: ""; position: absolute; top: calc(50% - 26px); left: 50%; width: 56px; height: 32px; margin-left: -28px; border-radius: 999px;
+.nav button::before { content: ""; position: absolute; top: 5px; bottom: 5px; left: 50%; width: 58px; margin-left: -29px; border-radius: 999px;
   background: var(--prisoft); transform: scaleX(.3); opacity: 0; transition: transform .32s var(--ease), opacity .2s; }
-.nav svg { position: relative; width: 24px; height: 24px; fill: currentColor; padding: 4px 16px; box-sizing: content-box; transition: transform .25s var(--ease); }
+.nav svg { position: relative; width: 23px; height: 23px; fill: currentColor; padding: 0 16px; box-sizing: content-box; transition: transform .25s var(--ease); }
 .nav span { position: relative; white-space: nowrap; transition: transform .25s var(--ease); }
 .nav button.on { color: var(--pri); }
 .nav button.on::before { transform: scaleX(1); opacity: 1; }
 .nav button.on svg { transform: translateY(-1px); }
 .nav button:active svg { transform: scale(.86); transition-duration: .08s; }
 .nav button:active::before { transform: scaleX(.88); opacity: 1; transition-duration: .08s; }
-.badge { position: absolute; top: 6px; left: calc(50% + 6px); min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px; background: var(--bad); color: #fff; font: 700 .68rem/19px "IBM Plex Sans Thai", sans-serif; font-style: normal; text-align: center; box-shadow: 0 0 0 2px #fff; }
+.badge { position: absolute; top: 3px; left: calc(50% + 6px); min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px; background: var(--bad); color: #fff; font: 700 .68rem/19px "IBM Plex Sans Thai", sans-serif; font-style: normal; text-align: center; box-shadow: 0 0 0 2px #fff; }
 
 /* ---------- ส่วนประกอบ ---------- */
 .sec { font-size: .95rem; font-weight: 700; margin: 1.4rem .15rem .55rem; display: flex; align-items: baseline; gap: .4rem; color: var(--ink); }
@@ -264,7 +269,9 @@ dialog.sheet h2 { margin: 0 0 .2rem; font-size: 1.2rem; font-weight: 700; }
   :root { --nav-h: 0px; }
   .shell { grid-template-columns: 100px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .appbar, .content { grid-column: 2; }
-  .nav { grid-row: 1 / 3; grid-column: 1; }
+  .nav { position: relative; grid-row: 1 / 3; grid-column: 1; left: auto; right: auto; bottom: auto; max-width: none; margin: 0; border-radius: 0; border: 0; box-shadow: none; animation: none; }
+  .nav button::before { top: calc(50% - 27px); bottom: auto; height: 32px; }
+  .nav svg { padding: 4px 16px; }
   .appbar { padding-left: 1.5rem; }
   .nav { width: 100px; height: 100%; flex-direction: column; justify-content: flex-start; gap: .35rem; padding: 5rem .4rem 0; border-top: 0; border-right: 1px solid var(--line); background: #fff; }
   .nav button { flex: none; height: 66px; font-size: .74rem; }
