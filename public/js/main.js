@@ -11,11 +11,8 @@ async function api(path, { method = "GET", body } = {}) {
 }
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2500); }
 function closeOnBackdrop(d) { d.addEventListener("click", (e) => { if (e.target === d) d.close(); }); }
-["periodDlg", "dlg", "hist", "cxDlg", "rdDlg"].forEach((id) => closeOnBackdrop($(id)));
+["periodDlg", "dlg", "hist", "cxDlg", "rdDlg", "mdDlg"].forEach((id) => closeOnBackdrop($(id)));
 
-const PRESETS = {
-  add: [["จิตอาสาช่วยงานโรงเรียน", 5], ["ช่วยเหลือเพื่อน/ครู", 5], ["ทำความดี เก็บของได้คืนเจ้าของ", 10], ["บำเพ็ญประโยชน์ต่อชุมชน", 10]],
-};
 // โซนความรุนแรงตามคะแนนที่หักต่อครั้ง (เกณฑ์จาก /api/me)
 const ZONE_NAMES = ["เล็กน้อย", "ปานกลาง", "รุนแรง", "รุนแรงมาก"];
 function zoneOf(p) { const z = S.me?.zones || { mid: 6, high: 10, severe: 16 }; p = Math.abs(p); return p >= z.severe ? 3 : p >= z.high ? 2 : p >= z.mid ? 1 : 0; }
@@ -226,7 +223,8 @@ function openAction(kind, target) {
   if (!isOpen()) return toast(closedMsg());
   S.action = { kind, ...target };
   const names = target.names;
-  $("dTitle").textContent = kind === "deduct" ? "ตัดคะแนนพฤติกรรม" : "เพิ่มคะแนนพฤติกรรม";
+  const disc = S.me.user.is_discipline;
+  $("dTitle").textContent = kind === "deduct" ? "ตัดคะแนนพฤติกรรม" : disc ? "บันทึกความดี + เพิ่มคะแนน" : "บันทึกความดี (ให้ฝ่ายปกครองอนุมัติ)";
   $("dTitle").className = kind === "deduct" ? "bad" : "good";
   $("dWho").textContent = `${target.grade}/${target.room} · ` + (names.length > 3 ? `${names.slice(0, 3).join(", ")} และอีก ${names.length - 3} คน` : names.join(", "));
   const wn = S.me.warn_n;
@@ -239,7 +237,11 @@ function openAction(kind, target) {
   const cats = kind === "deduct" ? [...new Set(S.me.presets_deduct.map((x) => x.cat || "อื่น ๆ"))] : [];
   $("pPick").hidden = !cats.length;
   $("pCats").innerHTML = cats.length ? [`<button type="button" data-c="" class="on">ทั้งหมด</button>`, ...cats.map((c) => `<button type="button" data-c="${esc(c)}">${esc(c)}</button>`)].join("") : "";
-  $("dReason").value = "";
+  $("dReason").value = ""; $("dDetail").value = "";
+  $("dReasonBox").hidden = kind === "add"; $("dDetailBox").hidden = kind !== "add";
+  $("dMerit").hidden = kind !== "add";
+  $("dMerit").textContent = disc ? "ครูฝ่ายปกครองบันทึก = เพิ่มคะแนนทันทีตามประเภทความดี · ซิงค์ไปบันทึกความดีในระบบบริหารโรงเรียน"
+    : "ยังไม่เพิ่มคะแนนจนกว่าครูฝ่ายปกครองอนุมัติ (คะแนนตามประเภทความดี) · ซิงค์ไปบันทึกความดีในระบบบริหารโรงเรียน";
   paintPresetBtns(); $("dAmount").value = "5"; lockAmount(); paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
   S.action.refer = false; $("dNote").value = "";
   $("dReferBox").hidden = kind !== "deduct" || S.me.user.is_discipline;
@@ -248,7 +250,7 @@ function openAction(kind, target) {
 }
 function paintPresetBtns() {
   const a = S.action, kind = a.kind, q = $("pq").value.trim();
-  let list = kind === "deduct" ? S.me.presets_deduct.map((x) => [x.reason, x.points, x.cat || "อื่น ๆ"]) : PRESETS.add.map(([r, p]) => [r, p, ""]);
+  let list = kind === "deduct" ? S.me.presets_deduct.map((x) => [x.reason, x.points, x.cat || "อื่น ๆ"]) : S.me.merit_points.map((x) => [x.cat, x.points, ""]);
   if (q) list = list.filter(([r]) => r.includes(q));
   else if (a.cat) list = list.filter((x) => x[2] === a.cat);
   const cur = $("dReason").value;
@@ -269,7 +271,7 @@ $("dPresets").onclick = (e) => {
   $("dReason").value = b.dataset.r; $("dAmount").value = b.dataset.p; lockAmount(); paintZone();
 };
 // ข้อพฤติกรรมที่กำหนดไว้ (ตัดคะแนน) ล็อกคะแนนตายตัว · พิมพ์เหตุผลเองจึงปรับคะแนนได้
-function presetOf(reason) { return S.action?.kind === "deduct" ? S.me.presets_deduct.find((x) => x.reason === reason.trim()) : null; }
+function presetOf(reason) { return S.action?.kind === "deduct" ? S.me.presets_deduct.find((x) => x.reason === reason.trim()) : S.action?.kind === "add" ? { points: (S.me.merit_points.find((x) => x.cat === reason) || {}).points ?? 0 } : null; }
 function lockAmount() {
   const pr = presetOf($("dReason").value), lock = !!pr;
   if (pr) $("dAmount").value = pr.points;
@@ -291,7 +293,7 @@ function paintZone() {
   $("dReferHint").textContent = auto ? `หัก ${S.me.refer_min} คะแนนขึ้นไป ระบบส่งต่อฝ่ายปกครองอัตโนมัติ — ยังไม่หักคะแนนจนกว่าฝ่ายปกครองพิจารณา` : "ฝ่ายปกครองเป็นผู้พิจารณาและกดหักคะแนน (ยังไม่หักทันที)";
   $("dNoteBox").hidden = !refer;
   $("dWarn").hidden = !show || !S.me.warn_n || refer;
-  $("dOk").textContent = refer ? "ส่งต่อฝ่ายปกครอง" : "บันทึก";
+  $("dOk").textContent = refer ? "ส่งต่อฝ่ายปกครอง" : S.action?.kind === "add" && !S.me.user.is_discipline ? "ส่งให้ฝ่ายปกครองอนุมัติ" : "บันทึก";
   $("dOk").className = `btn lg ${refer ? "primary" : S.action?.kind === "add" ? "good" : "danger"}`;
   $("dZone").hidden = !show || p < 1;
   if (show && p >= 1) $("dZone").innerHTML = `โซน ${zoneTag(p)}`;
@@ -308,6 +310,17 @@ $("df").addEventListener("submit", async (e) => {
   if (e.submitter?.value !== "ok") return;
   e.preventDefault();
   const a = S.action;
+  if (a.kind === "add") {
+    if (!S.me.merit_points.some((x) => x.cat === $("dReason").value)) { $("derr").textContent = "เลือกประเภทความดี"; $("derr").hidden = false; return; }
+    $("dOk").disabled = true;
+    try {
+      const res = await api("/api/merits", { method: "POST", body: { year: S.year, term: S.term, grade: a.grade, room: a.room, category: $("dReason").value, detail: $("dDetail").value, incident_date: $("dDate").value, student_ids: a.ids } });
+      $("dlg").close(); toast(res.approved ? `บันทึกความดีและเพิ่มคะแนน ${res.approved} คน` : `บันทึกความดี ${res.saved} คน · รอฝ่ายปกครองอนุมัติ`);
+      S.sel.clear(); await refresh();
+    } catch (ex) { $("derr").textContent = ex.message; $("derr").hidden = false; }
+    $("dOk").disabled = false;
+    return;
+  }
   if (!$("dModeBox").hidden && !a.mode) { $("derr").textContent = "เลือก ตักเตือน หรือ ตัดคะแนนเลย"; $("derr").hidden = false; return; }
   $("dOk").disabled = true;
   try {
@@ -340,10 +353,10 @@ async function openHist(t) {
   $("hHead").innerHTML = `${ring(d.score)}<div><b>${esc(d.student.name)}</b><span class="muted">${esc(t.grade)}/${esc(t.room)} · เลขที่ ${d.student.number ?? "-"} · <span class="${pass ? "good" : "bad"}">${pass ? "ผ่าน" : "ไม่ผ่าน"}</span></span></div>`;
   const today = [...new Set(d.records.filter((r) => (r.referral ? r.status === "pending" : !r.cancelled_at && (r.points < 0 || r.warn)) && r.incident_date === S.me.today).map((r) => r.reason))];
   const dis = isOpen() ? "" : "disabled";
-  $("hAct").innerHTML = `${today.length ? `<div class="today">⚠ วันนี้ถูกตัด/ตักเตือนแล้ว: ${today.map(esc).join(", ")}</div>` : ""}${dis ? `<div class="today">🔒 ${closedMsg()}</div>` : ""}<button class="btn danger" data-k="deduct" ${dis}>− ตัดคะแนน</button><button class="btn good" data-k="add" ${dis}>+ เพิ่มคะแนน</button>`;
+  $("hAct").innerHTML = `${today.length ? `<div class="today">⚠ วันนี้ถูกตัด/ตักเตือนแล้ว: ${today.map(esc).join(", ")}</div>` : ""}${dis ? `<div class="today">🔒 ${closedMsg()}</div>` : ""}<button class="btn danger" data-k="deduct" ${dis}>− ตัดคะแนน</button><button class="btn good" data-k="add" ${dis}>+ บันทึกความดี</button>`;
   $("hAct").onclick = (e) => { const b = e.target.closest("[data-k]"); if (!b) return; openAction(b.dataset.k, { ids: [t.id], grade: t.grade, room: t.room, names: [d.student.name], today: [today] }); };
   S.histRecs = d.records;
-  $("hBody").innerHTML = d.records.length ? d.records.map((r) => r.referral ? refRec(r) : `<div class="rec ${r.cancelled_at ? "cx" : ""}">
+  $("hBody").innerHTML = d.records.length ? d.records.map((r) => r.merit ? meritRec(r) : r.referral ? refRec(r) : `<div class="rec ${r.cancelled_at ? "cx" : ""}">
       ${r.warn ? `<span class="pt warn">เตือน</span>` : `<span class="pt ${r.points < 0 ? "bad" : "good"}">${r.points > 0 ? "+" : ""}${r.points}</span>`}
       <span class="tx"><span class="rs">${esc(r.reason)}${r.points < 0 ? zoneTag(r.points) : ""}</span><small>${thDate(r.incident_date)} · ${r.referred_by_name ? `ส่งต่อโดย ${esc(r.referred_by_name)} · หักโดย ${esc(r.created_by_name || "")} (ฝ่ายปกครอง)` : esc(r.created_by_name || "")}${r.cancelled_at ? ` · ยกเลิกโดย ${esc(r.cancelled_by_name || "")}: ${esc(r.cancel_reason)}` : ""}</small></span>
       ${r.can_cancel ? `<button class="btn ghost" data-cx="${r.id}" data-warn="${r.warn ? 1 : ""}" data-what="${esc(r.warn ? `ตักเตือน: ${r.reason}` : `${r.points > 0 ? "+" : ""}${r.points} ${r.reason}`)}">ยกเลิก</button>` : ""}
@@ -358,7 +371,17 @@ function refRec(r) {
     ${r.can_decide ? `<button class="btn primary" data-rd="${r.id}">พิจารณา</button>` : r.can_cancel ? `<button class="btn ghost" data-cx="${r.id}" data-ref="1" data-what="${esc(`ส่งต่อฝ่ายปกครอง: −${r.points} ${r.reason}`)}">ยกเลิก</button>` : ""}
   </div>`;
 }
+const MER_ST = { pending: "รอฝ่ายปกครองอนุมัติ", approved: "อนุมัติแล้ว", rejected: "ไม่อนุมัติ (เก็บเป็นบันทึกความดี)" };
+function meritRec(r) {
+  return `<div class="rec ref merit ${r.status}">
+    <span class="pt good">+${r.points}<small>ความดี</small></span>
+    <span class="tx"><span class="rs">${esc(r.reason)} <span class="tag mst-${r.status}">${MER_ST[r.status]}</span></span><small>${thDate(r.incident_date)} · บันทึกโดย ${esc(r.created_by_name || "")}${r.detail ? ` · ${esc(r.detail)}` : ""}${r.decided_by_name ? ` · โดย ${esc(r.decided_by_name)}${r.decision_note ? `: ${esc(r.decision_note)}` : ""}` : ""}</small></span>
+    ${r.can_decide ? `<button class="btn primary" data-md="${r.id}">พิจารณา</button>` : ""}
+  </div>`;
+}
 $("hBody").onclick = (e) => {
+  const md = e.target.closest("[data-md]");
+  if (md) { const r = S.histRecs.find((x) => x.merit && x.id === Number(md.dataset.md)); return r && openMerit({ ...r, category: r.reason, date: r.incident_date, name: $("hHead").querySelector("b")?.textContent || "", grade: S.hist.grade, room: S.hist.room }); }
   const rd = e.target.closest("[data-rd]");
   if (rd) { const r = S.histRecs.find((x) => x.referral && x.id === Number(rd.dataset.rd)); return r && openDecide({ ...r, name: $("hHead").querySelector("b")?.textContent || "", grade: S.hist.grade, room: S.hist.room, referred_by_name: r.created_by_name }); }
   const b = e.target.closest("[data-cx]"); if (!b) return;
@@ -473,6 +496,8 @@ function paintHours() {
   const z = S.me.zones;
   $("zoneTxt").textContent = `เล็กน้อย 1–${z.mid - 1} · ปานกลาง ${z.mid}–${z.high - 1} · รุนแรง ${z.high}–${z.severe - 1} · รุนแรงมาก ${z.severe}+`;
   $("zoneEdit").hidden = !edit;
+  $("meritSec").hidden = !edit;
+  if (edit) $("meritList").innerHTML = S.me.merit_points.map((x) => `<div class="item"><span>${esc(x.cat)}</span><span class="hours">+<input type="number" min="1" max="100" inputmode="numeric" data-mc="${esc(x.cat)}" value="${x.points}" aria-label="คะแนน ${esc(x.cat)}"></span></div>`).join("");
   $("referTxt").textContent = `หักตั้งแต่ ${S.me.refer_min} คะแนนขึ้นไป`;
   $("referEdit").hidden = !edit;
   if (edit) $("rMin").value = S.me.refer_min;
@@ -511,6 +536,11 @@ $("referSave").onclick = async () => {
   try { const d = await api("/api/settings", { method: "PUT", body: { refer_min: Number($("rMin").value) } }); S.me.refer_min = d.refer_min; paintHours(); toast("บันทึกแล้ว"); }
   catch (e) { toast(e.message); }
 };
+$("meritSave").onclick = async () => {
+  const m = Object.fromEntries([...document.querySelectorAll("[data-mc]")].map((i) => [i.dataset.mc, Number(i.value)]));
+  try { const d = await api("/api/settings", { method: "PUT", body: { merit_points: m } }); S.me.merit_points = d.merit_points; paintHours(); toast("บันทึกแล้ว"); }
+  catch (e) { toast(e.message); }
+};
 $("warnSave").onclick = async () => {
   try { const d = await api("/api/settings", { method: "PUT", body: { warn_count: Number($("wN").value) } }); S.me.warn_n = d.warn_n; paintHours(); toast("บันทึกแล้ว"); }
   catch (e) { toast(e.message); }
@@ -521,18 +551,26 @@ $("hoursSave").onclick = async () => {
 };
 
 // ---------- ส่งต่อฝ่ายปกครอง ----------
-S.refSt = "pending";
+S.refSt = "pending"; S.refKind = "deduct";
 function paintBadge() {
-  const n = S.me.user.is_discipline ? S.me.pending_referrals || 0 : 0;
+  const n = S.me.user.is_discipline ? (S.me.pending_referrals || 0) + (S.me.pending_merits || 0) : 0;
   $("refBadge").hidden = !n; $("refBadge").textContent = n > 99 ? "99+" : n;
 }
 async function refreshBadge() {
   if (!S.me.user.is_discipline) return;
-  try { const d = await api(`/api/referrals?year=${S.year}&term=${S.term}&status=pending`); S.me.pending_referrals = d.referrals.length; paintBadge(); } catch { /* */ }
+  try {
+    const [a, b] = await Promise.all([api(`/api/referrals?year=${S.year}&term=${S.term}&status=pending`), api(`/api/merits?year=${S.year}&term=${S.term}&status=pending`)]);
+    S.me.pending_referrals = a.referrals.length; S.me.pending_merits = b.merits.length; paintBadge();
+  } catch { /* */ }
 }
 document.querySelectorAll("#refSeg button").forEach((b) => (b.onclick = () => { S.refSt = b.dataset.s; loadRefer(); }));
+document.querySelectorAll("#refKind button").forEach((b) => (b.onclick = () => { S.refKind = b.dataset.k; loadRefer(); }));
 async function loadRefer() {
   document.querySelectorAll("#refSeg button").forEach((b) => b.classList.toggle("on", b.dataset.s === S.refSt));
+  document.querySelectorAll("#refKind button").forEach((b) => b.classList.toggle("on", b.dataset.k === S.refKind));
+  $("refKind").querySelector("[data-k=deduct] em").textContent = S.me.user.is_discipline && S.me.pending_referrals ? S.me.pending_referrals : "";
+  $("refKind").querySelector("[data-k=merit] em").textContent = S.me.user.is_discipline && S.me.pending_merits ? S.me.pending_merits : "";
+  if (S.refKind === "merit") return loadMerits();
   $("refInfo").textContent = S.me.user.is_discipline
     ? `หัก ${S.me.refer_min} คะแนนขึ้นไปส่งต่ออัตโนมัติ · ครูส่งต่อเองได้ · ท่านพิจารณาแล้วกดหัก/ตักเตือน ระบบบันทึกชื่อผู้ส่งและผู้หัก (กติกาเดิม: วันละครั้ง · โซนเล็กน้อยต้องตักเตือนครบ ${S.me.warn_n} ครั้งก่อน)`
     : `พฤติกรรมที่หัก ${S.me.refer_min} คะแนนขึ้นไปส่งต่อฝ่ายปกครองอัตโนมัติ ยังไม่หักคะแนนจนกว่าฝ่ายปกครองพิจารณา`;
@@ -551,6 +589,11 @@ async function loadRefer() {
 }
 $("refList").onclick = (e) => {
   const c = e.target.closest(".refcard"); if (!c) return;
+  if (c.dataset.m) {
+    const m = S.merits.find((x) => x.id === Number(c.dataset.m)); if (!m) return;
+    if (e.target.closest("[data-a=decide]")) return openMerit(m);
+    return openHist({ id: m.student_id, grade: m.grade, room: m.room });
+  }
   const r = S.refs.find((x) => x.id === Number(c.dataset.id)); if (!r) return;
   const a = e.target.closest("[data-a]")?.dataset.a;
   if (a === "decide") return openDecide(r);
@@ -589,6 +632,54 @@ $("rdf").addEventListener("submit", async (e) => {
     await refresh();
   } catch (ex) { $("rderr").textContent = ex.message; $("rderr").hidden = false; }
   $("rdOk").disabled = false;
+});
+
+// ---------- ความดีรออนุมัติ ----------
+async function loadMerits() {
+  $("refInfo").textContent = S.me.user.is_discipline
+    ? "บันทึกความดีจากครูประจำชั้น (ทั้งที่นี่และระบบบริหารโรงเรียน) · อนุมัติ = เพิ่มคะแนนตามประเภทความดี · ไม่อนุมัติ = ยังเก็บเป็นบันทึกความดี ระบบบันทึกชื่อผู้บันทึกและผู้อนุมัติ"
+    : "ครูประจำชั้นบันทึกความดีได้ แต่เพิ่มคะแนนได้เฉพาะครูฝ่ายปกครองเมื่ออนุมัติ";
+  $("refList").innerHTML = `<div class="empty">กำลังโหลด…</div>`;
+  let d;
+  try { d = await api(`/api/merits?year=${S.year}&term=${S.term}&status=${S.refSt}`); } catch (e) { $("refList").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  S.merits = d.merits;
+  if (S.refSt === "pending" && S.me.user.is_discipline) { S.me.pending_merits = d.merits.length; paintBadge(); $("refKind").querySelector("[data-k=merit] em").textContent = d.merits.length || ""; }
+  $("refList").innerHTML = d.merits.length ? d.merits.map((m) => `<div class="refcard merit ${m.status}" data-m="${m.id}">
+      <div class="rc-top"><span class="tag room">${esc(m.grade)}/${esc(m.room)}</span><b>${esc(m.name)}</b><span class="pts good">+${m.points}</span></div>
+      <div class="rc-why">${esc(m.category)}${m.detail ? ` <span class="muted">— ${esc(m.detail)}</span>` : ""}</div>
+      <div class="rc-meta">${thDate(m.date)} · บันทึกโดย <b>${esc(m.created_by_name || "")}</b></div>
+      ${m.status !== "pending" ? `<div class="rc-res"><span class="tag mst-${m.status}">${MER_ST[m.status]}</span> ${m.decided_by_name ? `โดย ${esc(m.decided_by_name)}` : ""}${m.note ? ` · ${esc(m.note)}` : ""}</div>` : ""}
+      ${m.can_decide ? `<div class="rc-act"><button class="btn primary" data-a="decide">พิจารณา</button></div>` : ""}
+    </div>`).join("") : `<div class="empty">${S.refSt === "pending" ? "✓ ไม่มีความดีรออนุมัติ" : "ยังไม่มีรายการ"}</div>`;
+}
+function openMerit(m) {
+  if (!isOpen()) return toast(closedMsg());
+  S.merit = { m, action: null };
+  $("mdWho").innerHTML = `<b>${esc(m.name)}</b> · ${esc(m.grade)}/${esc(m.room)}<br><span class="muted">${esc(m.category)}${m.detail ? ` — ${esc(m.detail)}` : ""} · ${thDate(m.date)}<br>บันทึกโดย ${esc(m.created_by_name || "")}</span>`;
+  $("mdNote").value = ""; $("mderr").hidden = true; paintMerit();
+  $("mdDlg").showModal();
+}
+function paintMerit() {
+  const a = S.merit.action;
+  $("mdSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.a === a));
+  $("mdSeg").querySelector("[data-a=approve]").textContent = `อนุมัติ +${S.merit.m.points}`;
+  $("mdNoteLbl").firstChild.textContent = a === "reject" ? "เหตุผลที่ไม่อนุมัติ (จำเป็น)" : "หมายเหตุ (ถ้ามี)";
+  $("mdOk").textContent = a === "approve" ? `เพิ่ม ${S.merit.m.points} คะแนน` : a === "reject" ? "ไม่อนุมัติ" : "ยืนยัน";
+  $("mdOk").className = `btn lg ${a === "approve" ? "good" : a === "reject" ? "ghost" : "primary"}`;
+  $("mdOk").disabled = !a;
+}
+$("mdSeg").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.merit.action = b.dataset.a; paintMerit(); };
+$("mdf").addEventListener("submit", async (e) => {
+  if (e.submitter?.value !== "ok") return;
+  e.preventDefault();
+  const { m, action } = S.merit; if (!action) return;
+  $("mdOk").disabled = true;
+  try {
+    const res = await api(`/api/merits/${m.id}/decide`, { method: "POST", body: { action, note: $("mdNote").value } });
+    $("mdDlg").close(); toast(res.result === "approved" ? `เพิ่ม ${res.points} คะแนนแล้ว` : "บันทึกไม่อนุมัติแล้ว (ยังเป็นบันทึกความดี)");
+    await refresh();
+  } catch (ex) { $("mderr").textContent = ex.message; $("mderr").hidden = false; }
+  $("mdOk").disabled = false;
 });
 
 boot();

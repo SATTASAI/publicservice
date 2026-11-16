@@ -57,6 +57,20 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_ps_ref_day ON ps_referrals(student_id, incident_date)`,
   `CREATE INDEX IF NOT EXISTS idx_ps_ref_record ON ps_referrals(record_id)`,
   `CREATE INDEX IF NOT EXISTS idx_ps_ref_warning ON ps_referrals(warning_id)`,
+  // บันทึกความดี — ตารางของระบบบริหารโรงเรียน (system, src/routes/student-merit.js) ใช้ร่วมกันสองทาง · โครงสร้างต้องตรงกับที่นั่น
+  // ps_record_id = รายการเพิ่มคะแนนที่ฝ่ายปกครองอนุมัติ
+  `CREATE TABLE IF NOT EXISTS good_deeds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    deed_date TEXT NOT NULL, category TEXT NOT NULL, detail TEXT,
+    academic_year INTEGER NOT NULL, term INTEGER NOT NULL,
+    ps_record_id INTEGER, created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  `CREATE INDEX IF NOT EXISTS idx_good_deeds_year ON good_deeds(academic_year, term, student_id)`,
+  // ผลพิจารณาความดีของฝ่ายปกครอง: approved (เพิ่มคะแนนตามประเภท) | rejected (ไม่เพิ่ม แต่ยังเป็นบันทึกความดี) · ไม่มีแถว = รอพิจารณา
+  `CREATE TABLE IF NOT EXISTS ps_merit_reviews (
+    deed_id INTEGER PRIMARY KEY, status TEXT NOT NULL CHECK (status IN ('approved', 'rejected')),
+    points INTEGER, record_id INTEGER, decided_by INTEGER NOT NULL, decided_at TEXT NOT NULL DEFAULT (datetime('now')), note TEXT)`,
 ];
 
 const ready = new WeakMap();

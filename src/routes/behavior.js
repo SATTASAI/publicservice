@@ -92,6 +92,14 @@ async function getWarnN(env) {
   const n = Number(r?.value);
   return Number.isInteger(n) && n >= 0 && n <= WARN_MAX ? n : WARN_DEFAULT;
 }
+// ประเภทความดี (ตรงกับ DEED_CATEGORIES ของ system/src/routes/student-merit.js) · คะแนนที่ได้เมื่อฝ่ายปกครองอนุมัติ — ผู้ดูแลแก้ได้
+const MERIT_DEFAULT = [["ช่วยเหลือผู้อื่น", 5], ["จิตอาสา/บำเพ็ญประโยชน์", 5], ["เก็บของได้ส่งคืน", 10], ["ซื่อสัตย์สุจริต", 10], ["กตัญญูกตเวที", 5],
+  ["มีน้ำใจ/แบ่งปัน", 5], ["รักษาความสะอาด/ดูแลสิ่งแวดล้อม", 5], ["มีวินัย/ประพฤติตนดี", 5], ["อื่น ๆ", 3]];
+async function getMeritPoints(env) {
+  const r = await env.DB.prepare("SELECT value FROM ps_settings WHERE key = 'merit_points'").first().catch(() => null);
+  let m = {}; try { m = JSON.parse(r?.value || "{}") || {}; } catch { /* */ }
+  return MERIT_DEFAULT.map(([cat, def]) => { const n = Number(m[cat]); return { cat, points: Number.isInteger(n) && n >= 1 && n <= 100 ? n : def }; });
+}
 // ส่งต่อฝ่ายปกครองอัตโนมัติเมื่อหักตั้งแต่ refer_min คะแนนขึ้นไป (ครูที่ไม่ใช่ฝ่ายปกครอง)
 const REFER_DEFAULT = 10;
 async function getReferMin(env) {
@@ -197,8 +205,9 @@ export async function handleMe(request, env, user, url) {
     years: await listYears(env), year, terms, term: currentTerm(terms), today: thaiToday(),
     rooms: await editableRooms(env, user, year.id), base: BASE_SCORE, pass_min: PASS_MIN,
     hours: hoursState(await getHours(env)), warn_n: await getWarnN(env), zones: await getZones(env),
-    presets_deduct: await getPresets(env), refer_min: await getReferMin(env),
+    presets_deduct: await getPresets(env), refer_min: await getReferMin(env), merit_points: await getMeritPoints(env),
     pending_referrals: user.is_discipline ? Number((await env.DB.prepare("SELECT COUNT(*) AS n FROM ps_referrals WHERE status = 'pending' AND academic_year_id = ?").bind(year.id).first())?.n || 0) : 0,
+    pending_merits: user.is_discipline ? Number((await env.DB.prepare(`SELECT COUNT(*) AS n FROM good_deeds g WHERE g.academic_year = ? AND ${MERIT_PENDING}`).bind(year.year_be).first().catch(() => null))?.n || 0) : 0,
   });
 }
 
@@ -337,10 +346,19 @@ export async function handleRecords(request, env, user, parts, method, url) {
          FROM ps_referrals f LEFT JOIN users u ON u.id = f.referred_by LEFT JOIN users d ON d.id = f.decided_by
         WHERE f.academic_year_id = ? AND f.term_number = ? AND f.student_id = ? AND f.status IN ('pending', 'rejected')`
     ).bind(year.id, term, sid).all();
-    const all = [...results, ...warns.map((w) => ({ ...w, warn: true })), ...refs.map((f) => ({ ...f, referral: true }))]
+    const { results: deeds } = await env.DB.prepare(
+      `SELECT g.id, g.category, g.detail, g.deed_date AS incident_date, g.created_at, g.created_by, u.full_name AS created_by_name,
+              v.status, v.note AS decision_note, d.full_name AS decided_by_name
+         FROM good_deeds g LEFT JOIN users u ON u.id = g.created_by LEFT JOIN ps_merit_reviews v ON v.deed_id = g.id LEFT JOIN users d ON d.id = v.decided_by
+         LEFT JOIN ps_behavior_records p ON p.id = g.ps_record_id
+        WHERE g.academic_year = ? AND g.term = ? AND g.student_id = ? AND (v.status = 'rejected' OR ${MERIT_PENDING})`
+    ).bind(year.year_be, term, sid).all().catch(() => ({ results: [] }));
+    const mp = await getMeritPoints(env);
+    const all = [...results, ...warns.map((w) => ({ ...w, warn: true })), ...refs.map((f) => ({ ...f, referral: true })),
+      ...deeds.map((g) => ({ ...g, merit: true, status: g.status || "pending", reason: g.category, points: (mp.find((x) => x.cat === g.category) || mp[mp.length - 1]).points }))]
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || b.id - a.id);
     return json({ student: { id: sid, number: st.number, name: studentName(st) }, score, warn_n: await getWarnN(env),
-      records: all.map((r) => ({ ...r, can_cancel: r.referral ? r.status === "pending" && (user.is_discipline || r.created_by === user.id)
+      records: all.map((r) => r.merit ? { ...r, can_decide: r.status === "pending" && !!user.is_discipline } : ({ ...r, can_cancel: r.referral ? r.status === "pending" && (user.is_discipline || r.created_by === user.id)
         : !r.cancelled_at && (user.is_discipline || r.created_by === user.id), can_decide: !!(r.referral && r.status === "pending" && user.is_discipline) })) });
   }
 
@@ -353,7 +371,7 @@ export async function handleRecords(request, env, user, parts, method, url) {
     const { grade, room, roster } = await pickRoom(env, user, year.id, b.grade, b.room);
     let amount = Number(b.amount);
     if (!Number.isInteger(amount) || amount < 1 || amount > 100) fail(400, "จำนวนคะแนนต้องเป็นจำนวนเต็ม 1–100");
-    if (b.kind !== "deduct" && b.kind !== "add") fail(400, "เลือกตัดหรือเพิ่มคะแนน");
+    if (b.kind !== "deduct") fail(400, "การเพิ่มคะแนนต้องบันทึกเป็นความดี ให้ครูฝ่ายปกครองอนุมัติ");
     const reason = text(b.reason, 300);
     if (!reason) fail(400, "กรุณาระบุเหตุผล");
     // ข้อพฤติกรรมที่กำหนดไว้: คะแนนที่ตัดล็อกตามที่กำหนด แก้ไม่ได้
@@ -462,6 +480,14 @@ export async function handleSettings(request, env, user, method) {
         .bind(JSON.stringify(z), user.id).run();
       await audit(env, user, "settings.zones", z);
       return json({ ok: true, zones: z });
+    }
+    // PUT { merit_points: { ประเภท: คะแนน } } — คะแนนความดีแต่ละประเภท
+    if (b.merit_points !== undefined) {
+      const m = {};
+      for (const [cat] of MERIT_DEFAULT) { const n = Number(b.merit_points?.[cat]); if (!Number.isInteger(n) || n < 1 || n > 100) fail(400, `คะแนน "${cat}" ต้องเป็นจำนวนเต็ม 1–100`); m[cat] = n; }
+      await putSetting(env, "merit_points", JSON.stringify(m), user.id).run();
+      await audit(env, user, "settings.merit", m);
+      return json({ ok: true, merit_points: await getMeritPoints(env) });
     }
     // PUT { refer_min } — หักตั้งแต่กี่คะแนนส่งต่อฝ่ายปกครองอัตโนมัติ
     if (b.refer_min !== undefined) {
@@ -607,6 +633,98 @@ export async function handleReferrals(request, env, user, parts, method, url) {
     await decide("deducted", ", record_id = ?", [r.id]).run();
     await audit(env, user, "referral.deduct", { id, record_id: r.id, points: -f.points });
     return json({ ok: true, result: "deducted" });
+  }
+  fail(405, "ไม่รองรับ");
+}
+
+// ---------- บันทึกความดี (ซิงค์สองทางกับ good_deeds ของ system) ----------
+// รอพิจารณา = ยังไม่มีผลพิจารณา และยังไม่เคยใช้เพิ่มคะแนน (รายการเก่าที่ system เพิ่ม +1 ไปแล้วไม่นับ)
+const MERIT_PENDING = "NOT EXISTS (SELECT 1 FROM ps_merit_reviews v2 WHERE v2.deed_id = g.id) AND (g.ps_record_id IS NULL OR EXISTS (SELECT 1 FROM ps_behavior_records p2 WHERE p2.id = g.ps_record_id AND p2.cancelled_at IS NOT NULL))";
+const meritReason = (g) => `ทำความดี: ${g.category}${g.detail ? ` — ${g.detail}` : ""}`.slice(0, 300);
+
+async function approveMerit(env, user, g, yearId, note) {
+  const pts = (await getMeritPoints(env)).find((x) => x.cat === g.category) || { points: MERIT_DEFAULT.at(-1)[1] };
+  const r = await env.DB.prepare("INSERT INTO ps_behavior_records (academic_year_id, term_number, student_id, points, reason, incident_date, created_by) VALUES (?,?,?,?,?,?,?) RETURNING id")
+    .bind(yearId, g.term, g.student_id, pts.points, meritReason(g), g.deed_date, user.id).first();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE good_deeds SET ps_record_id = ?, updated_at = datetime('now') WHERE id = ?").bind(r.id, g.id),
+    env.DB.prepare("INSERT INTO ps_merit_reviews (deed_id, status, points, record_id, decided_by, note) VALUES (?, 'approved', ?, ?, ?, ?) ON CONFLICT(deed_id) DO UPDATE SET status = 'approved', points = excluded.points, record_id = excluded.record_id, decided_by = excluded.decided_by, decided_at = datetime('now'), note = excluded.note")
+      .bind(g.id, pts.points, r.id, user.id, note || null),
+  ]);
+  return pts.points;
+}
+
+// GET /api/merits?year&term&status=pending|done — ฝ่ายปกครอง: ทุกห้อง · ครูประจำชั้น: ห้องของตน
+// POST /api/merits { year, term, grade, room, student_ids, category, detail, incident_date } — บันทึกความดี (ฝ่ายปกครองบันทึก = อนุมัติเพิ่มคะแนนทันที)
+// POST /api/merits/:id/decide { action: approve|reject, note } — ครูฝ่ายปกครอง
+export async function handleMerits(request, env, user, parts, method, url) {
+  requireUser(user);
+  if (method === "GET" && !parts[2]) {
+    const q = url.searchParams;
+    const year = await resolveYear(env, q.get("year"));
+    const term = termOf(q.get("term"));
+    const done = q.get("status") === "done";
+    const rooms = await editableRooms(env, user, year.id);
+    const rosters = await Promise.all(rooms.map((x) => roomRoster(env, year.id, x.grade_level, x.classroom)));
+    const who = new Map();
+    rooms.forEach((x, i) => { for (const st of rosters[i]) who.set(st.id, { name: studentName(st), number: st.number, code: st.student_code, grade: x.grade_level, room: x.classroom }); });
+    const { results } = await env.DB.prepare(
+      `SELECT g.id, g.student_id, g.deed_date, g.category, g.detail, g.created_at, u.full_name AS created_by_name,
+              v.status, v.points AS got_points, v.note, d.full_name AS decided_by_name, v.decided_at
+         FROM good_deeds g LEFT JOIN users u ON u.id = g.created_by LEFT JOIN ps_merit_reviews v ON v.deed_id = g.id LEFT JOIN users d ON d.id = v.decided_by
+        WHERE g.academic_year = ? AND g.term = ? AND ${done ? "v.deed_id IS NOT NULL" : MERIT_PENDING}
+        ORDER BY ${done ? "v.decided_at DESC" : "g.deed_date, g.id"} LIMIT 500`
+    ).bind(year.year_be, term).all().catch(() => ({ results: [] }));
+    const mp = await getMeritPoints(env);
+    return json({ year, term, merit_points: mp, merits: results.filter((g) => who.has(g.student_id)).map((g) => ({ ...who.get(g.student_id), id: g.id, student_id: g.student_id,
+      date: g.deed_date, category: g.category, detail: g.detail, created_by_name: g.created_by_name, status: g.status || "pending",
+      points: g.got_points ?? (mp.find((x) => x.cat === g.category) || mp.at(-1)).points, note: g.note, decided_by_name: g.decided_by_name,
+      can_decide: !g.status && !!user.is_discipline })) });
+  }
+  if (method === "POST" && !parts[2]) {
+    await requireOpen(env);
+    const b = await readJson(request);
+    const year = await resolveYear(env, b.year);
+    const term = termOf(b.term);
+    const { grade, room, roster } = await pickRoom(env, user, year.id, b.grade, b.room);
+    const mp = await getMeritPoints(env);
+    if (!mp.some((x) => x.cat === b.category)) fail(400, "เลือกประเภทความดี");
+    const detail = text(b.detail, 500) || null;
+    const date = DATE.test(String(b.incident_date || "")) ? b.incident_date : thaiToday();
+    if (date > thaiToday()) fail(400, "วันที่ต้องไม่เกินวันนี้");
+    const ids = [...new Set((Array.isArray(b.student_ids) ? b.student_ids : []).map(Number))];
+    if (!ids.length) fail(400, "เลือกนักเรียนอย่างน้อย 1 คน");
+    const active = new Set(roster.filter((r) => !LEFT_STATUSES.includes(r.enrollment_status)).map((r) => r.id));
+    for (const id of ids) if (!active.has(id)) fail(400, "มีนักเรียนที่ไม่อยู่ในห้องนี้ หรือย้ายออกแล้ว");
+    let approved = 0;
+    for (const sid of ids) {
+      const g = await env.DB.prepare("INSERT INTO good_deeds (student_id, deed_date, category, detail, academic_year, term, created_by) VALUES (?,?,?,?,?,?,?) RETURNING *")
+        .bind(sid, date, b.category, detail, Number(year.year_be), term, user.id).first();
+      if (user.is_discipline) { await approveMerit(env, user, g, year.id, ""); approved++; }
+    }
+    await audit(env, user, "merit.add", { grade, room, term, category: b.category, students: ids, approved });
+    return json({ ok: true, saved: ids.length, approved });
+  }
+  if (method === "POST" && parts[3] === "decide") {
+    if (!user.is_discipline) fail(403, "เฉพาะครูฝ่ายปกครองอนุมัติเพิ่มคะแนนได้");
+    await requireOpen(env);
+    const id = intParam(parts[2]);
+    const b = await readJson(request);
+    const g = await env.DB.prepare(`SELECT g.* FROM good_deeds g WHERE g.id = ? AND ${MERIT_PENDING}`).bind(id).first();
+    if (!g) fail(409, "ไม่พบรายการ หรือพิจารณาแล้ว");
+    const note = text(b.note, 300);
+    const yr = await env.DB.prepare("SELECT id FROM academic_years WHERE year_be = ?").bind(g.academic_year).first();
+    if (!yr) fail(400, `ยังไม่มีปีการศึกษา ${g.academic_year} ในระบบ`);
+    if (b.action === "reject") {
+      if (!note) fail(400, "กรุณาระบุเหตุผลที่ไม่อนุมัติ");
+      await env.DB.prepare("INSERT INTO ps_merit_reviews (deed_id, status, decided_by, note) VALUES (?, 'rejected', ?, ?)").bind(id, user.id, note).run();
+      await audit(env, user, "merit.reject", { id, note });
+      return json({ ok: true, result: "rejected" });
+    }
+    if (b.action !== "approve") fail(400, "เลือก อนุมัติ หรือ ไม่อนุมัติ");
+    const pts = await approveMerit(env, user, g, yr.id, note);
+    await audit(env, user, "merit.approve", { id, points: pts });
+    return json({ ok: true, result: "approved", points: pts });
   }
   fail(405, "ไม่รองรับ");
 }
