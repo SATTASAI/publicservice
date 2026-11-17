@@ -49,7 +49,10 @@ async function boot() {
   $("base").textContent = S.me.base; $("passmin").textContent = S.me.pass_min;
   $("profile").innerHTML = `<div class="av">${esc((u.full_name || "?").replace(/^(นาย|นางสาว|นาง)\s*/, "").charAt(0))}</div><div><b>${esc(u.full_name)}</b><span class="muted">${roleLabel(u)}</span></div>`;
   fillYears(); paintPeriod(); paintHours(); paintPresets();
-  go(u.is_discipline ? "overview" : "room");
+  // เปิดจากแจ้งเตือน: ?tab=refer (ส่งต่อตัดคะแนน) · ?tab=merit (ความดีรออนุมัติ)
+  const qt = new URLSearchParams(location.search).get("tab");
+  if (qt === "refer" || qt === "merit") { S.refKind = qt === "merit" ? "merit" : "deduct"; S.refSt = "pending"; history.replaceState(null, "", location.pathname); go("refer"); }
+  else go(u.is_discipline ? "overview" : "room");
 }
 function showLogin(msg) {
   $("app").hidden = true; $("login").hidden = false;
