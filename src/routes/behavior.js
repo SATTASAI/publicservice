@@ -394,10 +394,10 @@ export async function handleRecords(request, env, user, parts, method, url) {
         ids = ids.filter((id) => !skipIds.includes(id));
         skipped = names;
       }
-      // ส่งต่อฝ่ายปกครอง: หัก ≥ refer_min ส่งต่ออัตโนมัติ · ต่ำกว่านั้นครูเลือกส่งต่อเองได้ · ครูฝ่ายปกครองบันทึกเองไม่ต้องส่งต่อ
+      // ส่งต่อฝ่ายปกครอง: หัก ≥ refer_min ส่งต่ออัตโนมัติ · ต่ำกว่านั้นครูตัดคะแนนเองทันที (ไม่มีส่งต่อ) · ครูฝ่ายปกครองบันทึกเองไม่ต้องส่งต่อ
       // ยังไม่หักคะแนนจนกว่าครูฝ่ายปกครองกดหัก (ใช้กติกาเดิม: วันละครั้ง ตักเตือนก่อน โซน)
       const auto = amount >= (await getReferMin(env));
-      if (!user.is_discipline && (auto || b.refer === true)) {
+      if (!user.is_discipline && auto) {
         const note = text(b.note, 300);
         await env.DB.batch(ids.map((sid) => env.DB.prepare(
           "INSERT INTO ps_referrals (academic_year_id, term_number, student_id, grade_level, classroom, points, reason, incident_date, note, auto, referred_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
