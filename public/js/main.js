@@ -244,7 +244,6 @@ function openAction(kind, target) {
     : "ยังไม่เพิ่มคะแนนจนกว่าครูฝ่ายปกครองอนุมัติ (คะแนนตามประเภทความดี) · ซิงค์ไปบันทึกความดีในระบบบริหารโรงเรียน";
   paintPresetBtns(); $("dAmount").value = "5"; lockAmount(); paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
   S.action.refer = false; $("dNote").value = "";
-  $("dReferBox").hidden = kind !== "deduct" || S.me.user.is_discipline;
   paintZone();
   $("dlg").showModal();
 }
@@ -286,10 +285,11 @@ document.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => {
 }));
 function paintZone() {
   const show = S.action?.kind === "deduct", p = Number($("dAmount").value) || 0;
-  // ส่งต่อฝ่ายปกครอง: หัก ≥ refer_min ส่งต่ออัตโนมัติ (ครูที่ไม่ใช่ฝ่ายปกครอง) · ต่ำกว่านั้นเลือกเองได้
+  // ส่งต่อฝ่ายปกครอง: หัก ≥ refer_min ส่งต่ออัตโนมัติ (ครูที่ไม่ใช่ฝ่ายปกครอง) · ต่ำกว่านั้นครูตัดเองทันที ไม่แสดงตัวเลือกส่งต่อ
   const canRefer = show && !S.me.user.is_discipline, auto = canRefer && p >= S.me.refer_min;
-  const refer = canRefer && (auto || !!S.action?.refer);
-  $("dRefer").checked = refer; $("dRefer").disabled = auto;
+  const refer = auto;
+  $("dReferBox").hidden = !auto;
+  $("dRefer").checked = refer; $("dRefer").disabled = true;
   $("dReferHint").textContent = auto ? `หัก ${S.me.refer_min} คะแนนขึ้นไป ระบบส่งต่อฝ่ายปกครองอัตโนมัติ — ยังไม่หักคะแนนจนกว่าฝ่ายปกครองพิจารณา` : "ฝ่ายปกครองเป็นผู้พิจารณาและกดหักคะแนน (ยังไม่หักทันที)";
   $("dNoteBox").hidden = !refer;
   $("dWarn").hidden = !show || !S.me.warn_n || refer;
@@ -303,7 +303,6 @@ function paintZone() {
   if (!choose) S.action && (S.action.mode = null);
   $("dMode").querySelectorAll("button").forEach((b) => b.classList.toggle("on", !!S.action && b.dataset.m === S.action.mode));
 }
-$("dRefer").onchange = () => { S.action.refer = $("dRefer").checked; paintZone(); };
 $("dMode").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.action.mode = b.dataset.m; paintZone(); };
 $("dAmount").oninput = paintZone;
 $("df").addEventListener("submit", async (e) => {
@@ -326,7 +325,7 @@ $("df").addEventListener("submit", async (e) => {
   try {
     const res = await api("/api/records", { method: "POST", body: { year: S.year, term: S.term, grade: a.grade, room: a.room,
       kind: a.kind, amount: Number($("dAmount").value), reason: $("dReason").value, mode: a.mode || undefined, incident_date: $("dDate").value, student_ids: a.ids,
-      refer: a.kind === "deduct" && $("dRefer").checked || undefined, note: $("dNote").value || undefined } });
+      refer: undefined, note: $("dNote").value || undefined } });
     const msg = [res.referred ? `ส่งต่อฝ่ายปกครอง ${res.referred} คน${res.auto ? " (อัตโนมัติ)" : ""}` : "",res.saved ? `${a.kind === "deduct" ? "ตัดคะแนน" : "บันทึกแล้ว"} ${res.saved} คน` : "", res.warned ? `ตักเตือน ${res.warned} คน` : "",
       res.skipped?.length ? `ข้าม ${res.skipped.length} คนที่บันทึกเรื่องนี้วันนี้แล้ว` : ""].filter(Boolean).join(" · ");
     $("dlg").close(); toast(msg);
@@ -572,7 +571,7 @@ async function loadRefer() {
   $("refKind").querySelector("[data-k=merit] em").textContent = S.me.user.is_discipline && S.me.pending_merits ? S.me.pending_merits : "";
   if (S.refKind === "merit") return loadMerits();
   $("refInfo").textContent = S.me.user.is_discipline
-    ? `หัก ${S.me.refer_min} คะแนนขึ้นไปส่งต่ออัตโนมัติ · ครูส่งต่อเองได้ · ท่านพิจารณาแล้วกดหัก/ตักเตือน ระบบบันทึกชื่อผู้ส่งและผู้หัก (กติกาเดิม: วันละครั้ง · โซนเล็กน้อยต้องตักเตือนครบ ${S.me.warn_n} ครั้งก่อน)`
+    ? `หัก ${S.me.refer_min} คะแนนขึ้นไปส่งต่ออัตโนมัติ (ต่ำกว่านั้นครูประจำชั้นตัดเอง) · ท่านพิจารณาแล้วกดหัก/ตักเตือน ระบบบันทึกชื่อผู้ส่งและผู้หัก (กติกาเดิม: วันละครั้ง · โซนเล็กน้อยต้องตักเตือนครบ ${S.me.warn_n} ครั้งก่อน)`
     : `พฤติกรรมที่หัก ${S.me.refer_min} คะแนนขึ้นไปส่งต่อฝ่ายปกครองอัตโนมัติ ยังไม่หักคะแนนจนกว่าฝ่ายปกครองพิจารณา`;
   $("refList").innerHTML = `<div class="empty">กำลังโหลด…</div>`;
   let d;
@@ -686,6 +685,40 @@ $("mdf").addEventListener("submit", async (e) => {
     await refresh();
   } catch (ex) { $("mderr").textContent = ex.message; $("mderr").hidden = false; }
   $("mdOk").disabled = false;
+});
+
+// ---------- เลื่อนลงเพื่อปิด bottom sheet (มือถือ) ----------
+document.querySelectorAll("dialog.sheet").forEach((dlg) => {
+  let y0 = 0, t0 = 0, dy = 0, drag = false;
+  const reset = () => { dlg.classList.remove("dragging"); dlg.style.transform = ""; };
+  dlg.addEventListener("touchstart", (e) => {
+    if (innerWidth >= 900 || e.touches.length > 1 || e.target.closest("input, select, textarea")) return;
+    // ลากจากที่จับได้เสมอ · ลากจากตัว sheet ได้เมื่อเลื่อนอยู่บนสุด
+    if (!e.target.closest(".grab") && dlg.scrollTop > 0) return;
+    y0 = e.touches[0].clientY; t0 = Date.now(); dy = 0; drag = true;
+    dlg.classList.remove("settle");
+  }, { passive: true });
+  dlg.addEventListener("touchmove", (e) => {
+    if (!drag) return;
+    dy = e.touches[0].clientY - y0;
+    if (dy <= 0) { if (dlg.classList.contains("dragging")) { dlg.style.transform = ""; } else drag = false; return; }
+    if (dlg.scrollTop > 0 && !dlg.classList.contains("dragging")) { drag = false; return; }
+    e.preventDefault();
+    dlg.classList.add("dragging");
+    dlg.style.transform = `translateY(${dy}px)`;
+  }, { passive: false });
+  dlg.addEventListener("touchend", () => {
+    if (!drag) return;
+    drag = false;
+    if (!dlg.classList.contains("dragging")) return;
+    dlg.classList.remove("dragging"); dlg.classList.add("settle");
+    const fast = dy / Math.max(1, Date.now() - t0) > 0.5;
+    if (dy > 110 || (fast && dy > 30)) {
+      dlg.style.transform = "translateY(100%)";
+      setTimeout(() => { dlg.close(); dlg.classList.remove("settle"); dlg.style.transform = ""; }, 260);
+    } else { dlg.style.transform = ""; setTimeout(() => dlg.classList.remove("settle"), 300); }
+  });
+  dlg.addEventListener("touchcancel", reset);
 });
 
 boot();
