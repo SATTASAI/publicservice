@@ -2,6 +2,7 @@
 import { json, readJson, fail, requireUser, requireAdmin, intParam, text, GENERAL_DEPT_SQL, ADMIN_ROLES } from "../lib/http.js";
 import { listYears, resolveYear, yearTerms, currentTerm, listRooms, roomRoster, studentName, isPrimaryGrade, compareRoom, LEFT_STATUSES, thaiToday } from "../lib/roster.js";
 import { BASE_SCORE, PASS_MIN, foldScore } from "../lib/schema.js";
+import { pushLater, sendPush, disciplineIds } from "../lib/notify.js";
 
 // ---------- เวลาเปิด-ปิดการบันทึก (เวลาราชการ จ.–ศ. ตามเวลาไทย) ----------
 const HOURS_DEFAULT = { start: "08:30", end: "16:30" };
@@ -403,6 +404,10 @@ export async function handleRecords(request, env, user, parts, method, url) {
           "INSERT INTO ps_referrals (academic_year_id, term_number, student_id, grade_level, classroom, points, reason, incident_date, note, auto, referred_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
         ).bind(year.id, term, sid, grade, room, amount, reason, date, note || null, auto ? 1 : 0, user.id)));
         await audit(env, user, "referral.add", { grade, room, term, amount, reason, auto, students: ids });
+        const nm = roster.filter((r) => ids.includes(r.id)).map(studentName);
+        pushLater(request, env, { title: `ส่งต่อพิจารณาตัดคะแนน ${grade}/${room}`, tab: "refer",
+          body: `${nm.slice(0, 3).join(", ")}${nm.length > 3 ? ` และอีก ${nm.length - 3} คน` : ""} · −${amount} ${reason} · ส่งโดย ${user.full_name || ""}`,
+          userIds: await disciplineIds(env, user.id) });
         return json({ ok: true, saved: 0, warned: 0, referred: ids.length, auto, skipped });
       }
       // โซนปานกลางขึ้นไป (≥ mid): ครูเลือกเอง mode = "warn" (ตักเตือน) | "deduct" (ตัดคะแนนเลย)
@@ -610,6 +615,7 @@ export async function handleReferrals(request, env, user, parts, method, url) {
       if (!note) fail(400, "กรุณาระบุเหตุผลที่ไม่ดำเนินการ");
       await decide("rejected").run();
       await audit(env, user, "referral.reject", { id, reason: note });
+      await tellReferrer(request, env, user, f, `ไม่ดำเนินการ: ${note}`);
       return json({ ok: true, result: "rejected" });
     }
     // กติกาเดิม: ตัด/ตักเตือนเรื่องเดียวกันวันละครั้ง · โซนเล็กน้อยต้องตักเตือนครบก่อน · ปานกลางขึ้นไปเลือกเอง
@@ -626,12 +632,14 @@ export async function handleReferrals(request, env, user, parts, method, url) {
         .bind(f.academic_year_id, f.term_number, f.student_id, f.reason, f.incident_date, user.id).first();
       await decide("warned", ", warning_id = ?", [r.id]).run();
       await audit(env, user, "referral.warn", { id, warning_id: r.id, requested: action });
+      await tellReferrer(request, env, user, f, action === "deduct" ? "บันทึกเป็นตักเตือน (ยังตักเตือนไม่ครบตามเกณฑ์)" : "ตักเตือน");
       return json({ ok: true, result: "warned", forced: action === "deduct" });
     }
     const r = await env.DB.prepare("INSERT INTO ps_behavior_records (academic_year_id, term_number, student_id, points, reason, incident_date, created_by) VALUES (?,?,?,?,?,?,?) RETURNING id")
       .bind(f.academic_year_id, f.term_number, f.student_id, -f.points, f.reason, f.incident_date, user.id).first();
     await decide("deducted", ", record_id = ?", [r.id]).run();
     await audit(env, user, "referral.deduct", { id, record_id: r.id, points: -f.points });
+    await tellReferrer(request, env, user, f, `หักคะแนน −${f.points}`);
     return json({ ok: true, result: "deducted" });
   }
   fail(405, "ไม่รองรับ");
@@ -724,13 +732,49 @@ export async function handleMerits(request, env, user, parts, method, url) {
       if (!note) fail(400, "กรุณาระบุเหตุผลที่ไม่อนุมัติ");
       await env.DB.prepare("INSERT INTO ps_merit_reviews (deed_id, status, decided_by, note) VALUES (?, 'rejected', ?, ?)").bind(id, user.id, note).run();
       await audit(env, user, "merit.reject", { id, note });
+      await tellMeritOwner(request, env, user, g, `ไม่อนุมัติเพิ่มคะแนน: ${note} (ยังเป็นบันทึกความดี)`);
       return json({ ok: true, result: "rejected" });
     }
     if (b.action !== "approve") fail(400, "เลือก อนุมัติ หรือ ไม่อนุมัติ");
     const pts = await approveMerit(env, user, g, yr.id, note);
     if (!pts) fail(409, `คะแนนพฤติกรรมเต็ม ${BASE_SCORE} แล้ว เพิ่มไม่ได้ — รายการนี้ค้างรออนุมัติไว้ (ยังเป็นบันทึกความดี)`);
     await audit(env, user, "merit.approve", { id, points: pts });
+    await tellMeritOwner(request, env, user, g, `อนุมัติเพิ่มคะแนน +${pts}`);
     return json({ ok: true, result: "approved", points: pts });
   }
   fail(405, "ไม่รองรับ");
+}
+
+// ---------- แจ้งเตือน (school-notify) ----------
+async function studentLabel(env, sid) {
+  const s = await env.DB.prepare("SELECT name_prefix, first_name, last_name, full_name FROM students WHERE id = ?").bind(sid).first().catch(() => null);
+  return s ? studentName(s) : `นักเรียน #${sid}`;
+}
+async function tellReferrer(request, env, user, f, result) {
+  if (f.referred_by === user.id) return;
+  pushLater(request, env, { title: "ฝ่ายปกครองพิจารณาเรื่องที่ส่งต่อแล้ว", tab: "refer", userIds: [f.referred_by],
+    body: `${await studentLabel(env, f.student_id)} ${f.grade_level || ""}/${f.classroom || ""} · ${f.reason} → ${result} · โดย ${user.full_name || ""}` });
+}
+async function tellMeritOwner(request, env, user, g, result) {
+  if (!g.created_by || g.created_by === user.id) return;
+  pushLater(request, env, { title: "ฝ่ายปกครองพิจารณาความดีแล้ว", tab: "refer", userIds: [g.created_by],
+    body: `${await studentLabel(env, g.student_id)} · ${g.category} → ${result} · โดย ${user.full_name || ""}` });
+}
+// cron: ความดีใหม่ที่รออนุมัติ (id มากกว่าที่แจ้งไปแล้ว) — ครั้งแรกตั้งจุดเริ่มเป็นรายการล่าสุด ไม่ส่งย้อนหลัง
+export async function notifyPendingMerits(env) {
+  const last = await env.DB.prepare("SELECT value FROM ps_settings WHERE key = 'merit_notified_id'").first().catch(() => null);
+  const max = Number((await env.DB.prepare("SELECT MAX(id) AS m FROM good_deeds").first())?.m || 0);
+  if (last == null) { await putSetting(env, "merit_notified_id", String(max), null).run(); return; }
+  const from = Number(last.value) || 0;
+  if (max <= from) return;
+  const { results } = await env.DB.prepare(
+    `SELECT g.id, g.student_id, g.category, g.created_by, s.name_prefix, s.first_name, s.last_name, s.full_name
+       FROM good_deeds g JOIN students s ON s.id = g.student_id WHERE g.id > ? AND g.id <= ? AND ${MERIT_PENDING} ORDER BY g.id`
+  ).bind(from, max).all();
+  await putSetting(env, "merit_notified_id", String(max), null).run();
+  if (!results.length) return;
+  const names = [...new Set(results.map(studentName))];
+  await sendPush(env, { title: `ความดีรออนุมัติ ${results.length} รายการ`, tab: "merit",
+    body: `${names.slice(0, 3).join(", ")}${names.length > 3 ? ` และอีก ${names.length - 3} คน` : ""} · ${[...new Set(results.map((r) => r.category))].slice(0, 2).join(", ")}`,
+    userIds: await disciplineIds(env, results.length === 1 ? results[0].created_by : 0) });
 }

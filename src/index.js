@@ -3,6 +3,8 @@
 import {handleSchoolPasskeys} from './routes/passkeys.js';
 import { json, HttpError, currentUser } from "./lib/http.js";
 import { ensureSchema } from "./lib/schema.js";
+import { bindCtx } from "./lib/notify.js";
+import { notifyPendingMerits } from "./routes/behavior.js";
 import { applySecurityHeaders } from "./lib/auth-sessions.js";
 import { login, logout } from "./routes/auth.js";
 import { handleSso } from "./routes/sso.js";
@@ -34,7 +36,8 @@ async function routeApi(request, env, url) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    bindCtx(request, ctx);
     const url = new URL(request.url);
     if (url.pathname === "/sso" && request.method === "GET") return handleSso(request, env, url);
     if (!url.pathname.startsWith("/api/")) return applySecurityHeaders(await env.ASSETS.fetch(request));
@@ -48,5 +51,9 @@ export default {
       console.error("API error", url.pathname, String(err?.message || err));
       return json({ error: "เกิดข้อผิดพลาดภายในระบบ" }, 500);
     }
+  },
+  // ทุก 5 นาที: แจ้งครูฝ่ายปกครองเมื่อมีความดีใหม่รออนุมัติ (บันทึกจากที่นี่หรือระบบบริหารโรงเรียน)
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => { await ensureSchema(env); await notifyPendingMerits(env); })().catch((e) => console.error("cron", String(e?.message || e))));
   },
 };
