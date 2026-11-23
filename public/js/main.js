@@ -249,6 +249,8 @@ function openAction(kind, target) {
   S.action.refer = false; $("dNote").value = "";
   paintZone();
   $("dlg").showModal();
+  // ไม่โฟกัสช่องค้นหาอัตโนมัติ (คีย์บอร์ดเด้ง) — ครูกดค้นหาเองเมื่อต้องการ
+  if (document.activeElement === $("pq")) $("pq").blur();
 }
 function paintPresetBtns() {
   const a = S.action, kind = a.kind, q = $("pq").value.trim();

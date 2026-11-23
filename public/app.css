@@ -328,3 +328,4 @@ dialog.sheet h2 { margin: 0 0 .2rem; font-size: 1.2rem; font-weight: 700; }
 .appbar, .hero, .btn.primary, .nav, body { transition: background-color .5s, color .3s; }
 .rc-meta.full { color: #96600d; font-weight: 600; margin-top: .3rem; }
 .seg button:disabled { opacity: .4; cursor: not-allowed; }
+#dTitle:focus { outline: none; }
