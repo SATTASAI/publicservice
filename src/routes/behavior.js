@@ -2,7 +2,7 @@
 import { json, readJson, fail, requireUser, requireAdmin, intParam, text, GENERAL_DEPT_SQL, ADMIN_ROLES } from "../lib/http.js";
 import { listYears, resolveYear, yearTerms, currentTerm, listRooms, roomRoster, studentName, isPrimaryGrade, compareRoom, LEFT_STATUSES, thaiToday } from "../lib/roster.js";
 import { BASE_SCORE, PASS_MIN, foldScore } from "../lib/schema.js";
-import { pushLater, sendPush, disciplineIds } from "../lib/notify.js";
+import { pushLater, sendPush, disciplineIds, homeroomIds, recordMessage } from "../lib/notify.js";
 
 // ---------- เวลาเปิด-ปิดการบันทึก (เวลาราชการ จ.–ศ. ตามเวลาไทย) ----------
 const HOURS_DEFAULT = { start: "08:30", end: "16:30" };
@@ -432,6 +432,13 @@ export async function handleRecords(request, env, user, parts, method, url) {
     ]);
     if (ids.length) await audit(env, user, "behavior.add", { grade, room, term, points, reason, students: ids });
     if (warnIds.length) await audit(env, user, "behavior.warn", { grade, room, term, reason, students: warnIds });
+    // แจ้งครูฝ่ายปกครอง + ครูประจำชั้นของห้อง (ไม่รวมผู้บันทึก)
+    if (points < 0 && (ids.length || warnIds.length)) {
+      const nameOf = (list) => roster.filter((r) => list.includes(r.id)).map(studentName);
+      const to = [...await disciplineIds(env, user.id), ...await homeroomIds(env, year.id, grade, room, user.id)];
+      pushLater(request, env, { ...recordMessage({ grade, room, amount, reason, by: user.full_name, deducted: nameOf(ids), warned: nameOf(warnIds) }),
+        tab: "room", userIds: to });
+    }
     return json({ ok: true, saved: ids.length, warned: warnIds.length, skipped });
   }
 

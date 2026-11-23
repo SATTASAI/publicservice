@@ -6,7 +6,7 @@
 
 - Cloudflare Worker `publicservice` + `public/` (แอปมือถือ/PWA)
 - D1 `DB` = `banpadeng_school_db` · cron ทุก 5 นาที (ตรวจความดีรออนุมัติ → แจ้งเตือน)
-- ยังไม่มี test อัตโนมัติ — งานที่เปลี่ยน logic ต้องเพิ่ม test ด้วย `node:test` (สร้าง `tests/*.test.mjs` และเพิ่ม script `test`)
+- test ด้วย `node:test` ใน `tests/*.test.mjs` (`npm test`) — งานที่เปลี่ยน logic ต้องเพิ่ม test
 
 ## วิธีทำงานในรีโปนี้ (สำหรับ agent)
 
@@ -21,6 +21,7 @@
 
 ```sh
 npm ci
+npm test
 node --check src/index.js && for f in src/routes/*.js src/lib/*.js; do node --check "$f"; done
 npx wrangler dev        # ใช้ --local เท่านั้น ห้ามต่อฐานจริงเพื่อทดสอบ
 ```
@@ -89,7 +90,7 @@ teaching-media, evaluatesystem และ school-cooperative ความผิ�
 ## ระบบที่เชื่อมกัน
 
 - banpadeng-school-db: SSO จากเมนู ฝ่ายทั่วไป › รายงานพฤติกรรม (`publicservice_sso_codes`, ใช้ครั้งเดียว 60 วินาที)
-- students-report: อ่านผลไปออก ปพ.6 · school-notify: แจ้งเตือนส่งต่อ/อนุมัติ
+- students-report: อ่านผลไปออก ปพ.6 · school-notify: แจ้งเตือนส่งต่อ/อนุมัติ และตัดคะแนน/ตักเตือน (→ ฝ่ายปกครอง + ครูประจำชั้น ทันที ยกเลิกไม่แจ้ง — ผู้ใช้กำหนด)
 
 ## Deploy
 
