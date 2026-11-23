@@ -271,6 +271,7 @@ $("dPresets").onclick = (e) => {
   const b = e.target.closest("button"); if (!b) return;
   $("dPresets").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
   $("dReason").value = b.dataset.r; $("dAmount").value = b.dataset.p; lockAmount(); paintZone();
+  document.activeElement?.blur?.(); // ปิดคีย์บอร์ดหลังเลือก ให้เห็นปุ่มบันทึก
 };
 // ข้อพฤติกรรมที่กำหนดไว้ (ตัดคะแนน) ล็อกคะแนนตายตัว · พิมพ์เหตุผลเองจึงปรับคะแนนได้
 function presetOf(reason) { return S.action?.kind === "deduct" ? S.me.presets_deduct.find((x) => x.reason === reason.trim()) : S.action?.kind === "add" ? { points: (S.me.merit_points.find((x) => x.cat === reason) || {}).points ?? 0 } : null; }
@@ -691,28 +692,27 @@ $("mdf").addEventListener("submit", async (e) => {
 });
 
 // ---------- เลื่อนลงเพื่อปิด bottom sheet (มือถือ) ----------
+// ลากปิดได้เฉพาะจาก "ที่จับ" ด้านบนเท่านั้น — เดิมลากจากตัว sheet ได้ ทำให้เลื่อนรายการ/แตะข้อพฤติกรรมแล้ว sheet ปิดเอง
+// และต้องลากเกิน 10px ก่อนจึงนับเป็นการลาก (ไม่กินการแตะ)
 document.querySelectorAll("dialog.sheet").forEach((dlg) => {
-  let y0 = 0, t0 = 0, dy = 0, drag = false;
-  const reset = () => { dlg.classList.remove("dragging"); dlg.style.transform = ""; };
+  let y0 = 0, t0 = 0, dy = 0, track = false;
+  const reset = () => { track = false; dlg.classList.remove("dragging"); dlg.style.transform = ""; };
   dlg.addEventListener("touchstart", (e) => {
-    if (innerWidth >= 900 || e.touches.length > 1 || e.target.closest("input, select, textarea")) return;
-    // ลากจากที่จับได้เสมอ · ลากจากตัว sheet ได้เมื่อเลื่อนอยู่บนสุด
-    if (!e.target.closest(".grab") && dlg.scrollTop > 0) return;
-    y0 = e.touches[0].clientY; t0 = Date.now(); dy = 0; drag = true;
+    track = false;
+    if (innerWidth >= 900 || e.touches.length > 1 || !e.target.closest(".grab")) return;
+    y0 = e.touches[0].clientY; t0 = Date.now(); dy = 0; track = true;
     dlg.classList.remove("settle");
   }, { passive: true });
   dlg.addEventListener("touchmove", (e) => {
-    if (!drag) return;
+    if (!track) return;
     dy = e.touches[0].clientY - y0;
-    if (dy <= 0) { if (dlg.classList.contains("dragging")) { dlg.style.transform = ""; } else drag = false; return; }
-    if (dlg.scrollTop > 0 && !dlg.classList.contains("dragging")) { drag = false; return; }
+    if (!dlg.classList.contains("dragging")) { if (dy < 10) return; dlg.classList.add("dragging"); }
     e.preventDefault();
-    dlg.classList.add("dragging");
-    dlg.style.transform = `translateY(${dy}px)`;
+    dlg.style.transform = `translateY(${Math.max(0, dy)}px)`;
   }, { passive: false });
   dlg.addEventListener("touchend", () => {
-    if (!drag) return;
-    drag = false;
+    if (!track) return;
+    track = false;
     if (!dlg.classList.contains("dragging")) return;
     dlg.classList.remove("dragging"); dlg.classList.add("settle");
     const fast = dy / Math.max(1, Date.now() - t0) > 0.5;
