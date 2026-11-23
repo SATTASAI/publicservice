@@ -124,8 +124,21 @@ async function loadOverview() {
       <div class="bar"><i class="${ringCls(pct)}" style="width:${pct}%"></i></div>
       <span class="f ${r.fails ? "bad" : "good"}">${r.fails ? `ไม่ผ่าน ${r.fails} คน` : "ผ่านทุกคน"}</span></button>`;
   }).join("");
+  renderToday();
   renderOSearch();
 }
+// รายการวันนี้: หักคะแนน / ตักเตือน / เพิ่มคะแนน รวมรายการเดียว · กดเปิดประวัตินักเรียน
+function renderToday() {
+  const t = S.ov.today || [], n = (k) => t.filter((x) => x.type === k).length;
+  $("oTodayCount").textContent = t.length ? `หัก ${n("deduct")} · ตักเตือน ${n("warn")} · เพิ่ม ${n("add")}` : "";
+  const lbl = { deduct: "หัก", warn: "เตือน", add: "เพิ่ม" }, cls = { deduct: "bad", warn: "warn", add: "good" };
+  const hhmm = (at) => { const d = new Date(String(at).replace(" ", "T") + "Z"); return isNaN(d) ? "" : d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }); };
+  $("oToday").innerHTML = t.length ? t.map((x) => `<button class="rec tf" data-id="${x.student_id}" data-g="${esc(x.grade)}" data-r="${esc(x.room)}">
+      <span class="pt ${cls[x.type]}">${x.type === "warn" ? "เตือน" : `${x.type === "deduct" ? "−" : "+"}${x.points}`}<small>${lbl[x.type] === "เตือน" ? "" : lbl[x.type]}</small></span>
+      <span class="tx"><b>${esc(x.name)}</b> <span class="tag room">${esc(x.grade)}/${esc(x.room)}</span><small>${esc(x.reason)}</small><small>${hhmm(x.at)}${x.by ? ` · ${esc(x.by)}` : ""}</small></span></button>`).join("")
+    : `<div class="empty">วันนี้ยังไม่มีการหัก ตักเตือน หรือเพิ่มคะแนน</div>`;
+}
+$("oToday").onclick = (e) => { const b = e.target.closest(".tf"); if (!b) return; openHist({ id: Number(b.dataset.id), grade: b.dataset.g, room: b.dataset.r }); };
 $("oRooms").onclick = (e) => { const b = e.target.closest(".rm"); if (!b) return; setRoom(b.dataset.g, b.dataset.r); go("room"); };
 $("oq").oninput = renderOSearch;
 function renderOSearch() {

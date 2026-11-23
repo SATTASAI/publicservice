@@ -367,3 +367,12 @@ input[type=date], input[type=time] { -webkit-appearance: none; appearance: none;
 #dPresets button.on { background: var(--pri); border-color: var(--pri); color: #fff; }
 #dPresets button.on b, #dPresets button.on small { color: #fff; }
 #dPresets:empty, #dPresets:has(> .muted:only-child) { background: none; border: 0; box-shadow: none; -webkit-mask-image: none; mask-image: none; padding: 0; }
+/* ภาพรวม: รายการวันนี้ */
+.today-feed { padding: 0 .9rem; max-height: 60vh; overflow-y: auto; overscroll-behavior: contain; }
+.today-feed .rec.tf { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; transition: background-color .12s; }
+.today-feed .rec.tf:last-child { border-bottom: 0; }
+.today-feed .rec.tf:active { background: var(--prisoft); }
+.today-feed .rec .pt small { display: block; font-size: .64rem; font-weight: 600; }
+.today-feed .rec .pt.bad { color: var(--bad); } .today-feed .rec .pt.good { color: var(--good); } .today-feed .rec .pt.warn { color: var(--warn); }
+.today-feed .tx b { font-weight: 600; }
+.today-feed .empty { padding: 1rem 0; border: 0; }

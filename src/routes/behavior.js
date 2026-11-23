@@ -252,7 +252,32 @@ export async function handleOverview(request, env, user, url) {
     return { grade: r.grade_level, room: r.classroom, students: list.length, fails: list.filter((x) => !x.pass).length,
       avg: list.length ? Math.round((list.reduce((a, x) => a + x.score, 0) / list.length) * 10) / 10 : null };
   });
-  return json({ year, term, rooms: summary, students });
+  return json({ year, term, rooms: summary, students, today: await todayFeed(env, year.id, term, students) });
+}
+
+// รายการวันนี้ (ตามวันที่เกิดเหตุ เวลาไทย) ทั้งโรงเรียน: หักคะแนน / ตักเตือน / เพิ่มคะแนน · ไม่นับที่ยกเลิก · ใหม่ → เก่า
+export async function todayFeed(env, yearId, term, students) {
+  const date = thaiToday(), ids = students.map((x) => x.id), byId = new Map(students.map((x) => [x.id, x]));
+  const stmts = [];
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90), q = chunk.map(() => "?").join(",");
+    stmts.push(env.DB.prepare(
+      `SELECT r.id, r.student_id, r.points, r.reason, r.created_at, u.full_name AS by_name, 0 AS warn
+         FROM ps_behavior_records r LEFT JOIN users u ON u.id = r.created_by
+        WHERE r.student_id IN (${q}) AND r.incident_date = ? AND r.academic_year_id = ? AND r.term_number = ? AND r.cancelled_at IS NULL`
+    ).bind(...chunk, date, yearId, term));
+    stmts.push(env.DB.prepare(
+      `SELECT w.id, w.student_id, 0 AS points, w.reason, w.created_at, u.full_name AS by_name, 1 AS warn
+         FROM ps_behavior_warnings w LEFT JOIN users u ON u.id = w.created_by
+        WHERE w.student_id IN (${q}) AND w.incident_date = ? AND w.academic_year_id = ? AND w.term_number = ? AND w.cancelled_at IS NULL`
+    ).bind(...chunk, date, yearId, term));
+  }
+  const rows = stmts.length ? (await env.DB.batch(stmts)).flatMap((r) => r.results || []) : [];
+  return rows.map((r) => {
+    const st = byId.get(r.student_id);
+    return { id: r.id, student_id: r.student_id, name: st.name, grade: st.grade, room: st.room, score: st.score,
+      type: r.warn ? "warn" : r.points < 0 ? "deduct" : "add", points: Math.abs(r.points), reason: r.reason, by: r.by_name || "", at: r.created_at };
+  }).sort((a, b) => String(b.at).localeCompare(String(a.at)) || b.id - a.id).slice(0, 200);
 }
 
 // GET /api/stats?year&term&from&to&grade&room[&format=csv] — สถิติการตัด/เพิ่มคะแนน (และตักเตือน)
