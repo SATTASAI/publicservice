@@ -355,3 +355,6 @@ input[type=date], input[type=time] { -webkit-appearance: none; appearance: none;
 .statrow { grid-template-columns: minmax(0, 1fr) auto; }
 @media (min-width: 900px) { .rooms { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .seg button { min-width: 0; overflow-wrap: anywhere; }
+/* กดการ์ดแล้วสีเปลี่ยนขณะกด (การ์ดนักเรียน/ห้องเรียน) — สีตามธีมประจำวัน */
+.st, .rm { transition: border-color .15s, background-color .12s, transform .12s; }
+.st:active, .rm:active { background: var(--prisoft); border-color: var(--pri2); transform: scale(.98); }
