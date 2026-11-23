@@ -329,3 +329,29 @@ dialog.sheet h2 { margin: 0 0 .2rem; font-size: 1.2rem; font-weight: 700; }
 .rc-meta.full { color: #96600d; font-weight: 600; margin-top: .3rem; }
 .seg button:disabled { opacity: .4; cursor: not-allowed; }
 #dTitle:focus { outline: none; }
+
+/* ---------- ล็อกไม่ให้เลื่อนซ้าย–ขวา + ให้เนื้อหาพอดีจอมือถือ ---------- */
+html, body { overflow-x: hidden; max-width: 100%; }
+dialog.sheet { overflow-x: hidden; overscroll-behavior-x: none; }
+img, svg, video, canvas { max-width: 100%; }
+input, select, textarea, button { max-width: 100%; }
+.field input, .field select { min-width: 0; }
+/* ช่องวันที่/เวลาบน iOS มีความกว้างขั้นต่ำเอง ทำให้ล้นจอ */
+input[type=date], input[type=time] { -webkit-appearance: none; appearance: none; min-width: 0; min-height: 2.6rem; text-align: left; }
+.field input[type=date] { width: 100%; }
+.item .hours { flex: 1; min-width: 0; }
+.hours input[type=date] { flex: 1 1 8rem; }
+/* ข้อความไทยยาวไม่มีเว้นวรรค — ให้ตัดบรรทัดได้ ไม่ดันจอ */
+.presets button { max-width: 100%; overflow-wrap: anywhere; }
+.item .who, .rec .tx, .statrow > * { overflow-wrap: anywhere; min-width: 0; }
+/* คอลัมน์ grid หดได้ ไม่ล้นจอ */
+.hero .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rooms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sheet-act { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); }
+.stepper { grid-template-columns: 50px minmax(0, 1fr) 50px; }
+.seg { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.seg.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.hist-act { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.statrow { grid-template-columns: minmax(0, 1fr) auto; }
+@media (min-width: 900px) { .rooms { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.seg button { min-width: 0; overflow-wrap: anywhere; }
