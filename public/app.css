@@ -358,3 +358,12 @@ input[type=date], input[type=time] { -webkit-appearance: none; appearance: none;
 /* กดการ์ดแล้วสีเปลี่ยนขณะกด (การ์ดนักเรียน/ห้องเรียน) — สีตามธีมประจำวัน */
 .st, .rm { transition: border-color .15s, background-color .12s, transform .12s; }
 .st:active, .rm:active { background: var(--prisoft); border-color: var(--pri2); transform: scale(.98); }
+/* พื้นที่ข้อพฤติกรรม: แยกเป็นกล่องสีต่างจากส่วนอื่น + ปัดเลื่อนลื่นในกล่อง ไม่ดึง sheet ตาม */
+#dPresets { background: var(--prisoft); border: 1.5px solid var(--pri2); border-radius: var(--r); padding: .6rem; margin: .6rem 0 .4rem;
+  max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; scroll-behavior: smooth;
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.06);
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 22px), transparent); mask-image: linear-gradient(#000 calc(100% - 22px), transparent); padding-bottom: 1.4rem; }
+#dPresets button { background: #fff; padding: .6rem .75rem; }
+#dPresets button.on { background: var(--pri); border-color: var(--pri); color: #fff; }
+#dPresets button.on b, #dPresets button.on small { color: #fff; }
+#dPresets:empty, #dPresets:has(> .muted:only-child) { background: none; border: 0; box-shadow: none; -webkit-mask-image: none; mask-image: none; padding: 0; }

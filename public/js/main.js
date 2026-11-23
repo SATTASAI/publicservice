@@ -245,7 +245,7 @@ function openAction(kind, target) {
   $("dMerit").hidden = kind !== "add";
   $("dMerit").textContent = disc ? "ครูฝ่ายปกครองบันทึก = เพิ่มคะแนนทันทีตามประเภทความดี · ซิงค์ไปบันทึกความดีในระบบบริหารโรงเรียน"
     : "ยังไม่เพิ่มคะแนนจนกว่าครูฝ่ายปกครองอนุมัติ (คะแนนตามประเภทความดี) · ซิงค์ไปบันทึกความดีในระบบบริหารโรงเรียน";
-  paintPresetBtns(); $("dAmount").value = "5"; lockAmount(); paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
+  paintPresetBtns(); $("dPresets").scrollTop = 0; $("dAmount").value = "5"; lockAmount(); paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
   S.action.refer = false; $("dNote").value = "";
   paintZone();
   $("dlg").showModal();
@@ -265,9 +265,9 @@ $("pCats").onclick = (e) => {
   const b = e.target.closest("button"); if (!b) return;
   S.action.cat = b.dataset.c; $("pq").value = "";
   $("pCats").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
-  paintPresetBtns();
+  paintPresetBtns(); $("dPresets").scrollTop = 0;
 };
-$("pq").oninput = () => paintPresetBtns();
+$("pq").oninput = () => { paintPresetBtns(); $("dPresets").scrollTop = 0; };
 $("pq").onkeydown = (e) => { if (e.key === "Enter") e.preventDefault(); };
 $("dPresets").onclick = (e) => {
   const b = e.target.closest("button"); if (!b) return;
