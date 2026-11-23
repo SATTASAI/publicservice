@@ -273,7 +273,11 @@ function paintPresetBtns() {
   const cur = $("dReason").value;
   $("dPresets").innerHTML = list.map(([r, p, c]) => { const n = a.doneN(r), all = n && n === a.ids.length;
     return `<button type="button" data-r="${esc(r)}" data-p="${p}" ${all ? "disabled" : ""} class="${n ? "done" : ""} ${r === cur ? "on" : ""}">${esc(r)}<b class="${kind === "deduct" ? "bad" : "good"}">${kind === "deduct" ? "−" : "+"}${p}</b>${kind === "deduct" ? zoneTag(p) : ""}${q && c ? `<small class="cat">${esc(c)}</small>` : ""}${n ? `<small>${all ? "บันทึกแล้ววันนี้" : `บันทึกแล้ว ${n} คน`}</small>` : ""}</button>`; }).join("") || `<div class="muted">ไม่พบข้อพฤติกรรม — พิมพ์เหตุผลเองด้านล่างได้</div>`;
+  requestAnimationFrame(presetFade);
 }
+// ขอบล่างจางเฉพาะเมื่อยังมีรายการให้เลื่อนต่อ
+function presetFade() { const el = $("dPresets"); el.classList.toggle("more", el.scrollHeight - el.scrollTop - el.clientHeight > 4); }
+$("dPresets").addEventListener("scroll", presetFade, { passive: true });
 $("pCats").onclick = (e) => {
   const b = e.target.closest("button"); if (!b) return;
   S.action.cat = b.dataset.c; $("pq").value = "";
@@ -296,6 +300,8 @@ function lockAmount() {
   $("dAmount").readOnly = lock;
   document.querySelectorAll("[data-step]").forEach((b) => (b.disabled = lock));
   $("dAmount").closest(".stepper").classList.toggle("locked", lock);
+  // บันทึกความดี: คะแนนมาจากประเภทความดี — ยังไม่เลือกประเภทไม่ต้องโชว์ช่องคะแนน (เดิมโชว์ 0)
+  $("dAmtBox").hidden = S.action?.kind === "add" && !S.me.merit_points.some((x) => x.cat === $("dReason").value);
 }
 $("dReason").addEventListener("input", () => { lockAmount(); paintZone(); paintPresetBtns(); });
 document.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => {

@@ -180,7 +180,7 @@ set();setInterval(set,60000);document.addEventListener("visibilitychange",set);}
     <div class="info" id="dMerit" hidden></div>
     <label class="field" id="dReasonBox">เหตุผล<input name="reason" id="dReason" maxlength="300" placeholder="เลือกด้านบน หรือพิมพ์เอง"></label>
     <label class="field" id="dDetailBox" hidden>รายละเอียดความดี (ถ้ามี)<input id="dDetail" maxlength="500" placeholder="เช่น ช่วยครูยกของ"></label>
-    <div class="field">จำนวนคะแนน
+    <div class="field" id="dAmtBox">จำนวนคะแนน
       <div class="stepper"><button type="button" data-step="-1">−</button><input name="amount" id="dAmount" type="number" min="1" max="100" required inputmode="numeric"><button type="button" data-step="1">+</button></div>
     </div>
     <div class="zone" id="dZone" hidden></div>

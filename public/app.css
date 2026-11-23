@@ -362,7 +362,8 @@ input[type=date], input[type=time] { -webkit-appearance: none; appearance: none;
 #dPresets { background: var(--prisoft); border: 1.5px solid var(--pri2); border-radius: var(--r); padding: .6rem; margin: .6rem 0 .4rem;
   max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; scroll-behavior: smooth;
   box-shadow: inset 0 2px 6px rgba(0,0,0,.06);
-  -webkit-mask-image: linear-gradient(#000 calc(100% - 22px), transparent); mask-image: linear-gradient(#000 calc(100% - 22px), transparent); padding-bottom: 1.4rem; }
+  padding-bottom: .6rem; }
+#dPresets.more { -webkit-mask-image: linear-gradient(#000 calc(100% - 22px), transparent); mask-image: linear-gradient(#000 calc(100% - 22px), transparent); padding-bottom: 1.4rem; }
 #dPresets button { background: #fff; padding: .6rem .75rem; }
 #dPresets button.on { background: var(--pri); border-color: var(--pri); color: #fff; }
 #dPresets button.on b, #dPresets button.on small { color: #fff; }
@@ -376,3 +377,7 @@ input[type=date], input[type=time] { -webkit-appearance: none; appearance: none;
 .today-feed .rec .pt.bad { color: var(--bad); } .today-feed .rec .pt.good { color: var(--good); } .today-feed .rec .pt.warn { color: var(--warn); }
 .today-feed .tx b { font-weight: 600; }
 .today-feed .empty { padding: 1rem 0; border: 0; }
+/* ที่จับ sheet: background shorthand ทับ background-clip ทำให้ทาสีทั้งพื้นที่แตะ — วางซ้ำหลังสุด */
+.grab { background-clip: content-box; }
+/* ช่องวันที่ iOS: ชิดซ้ายเหมือนช่องอื่น */
+input[type=date]::-webkit-date-and-time-value { text-align: left; }
