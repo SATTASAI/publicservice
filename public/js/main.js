@@ -726,4 +726,7 @@ document.querySelectorAll("dialog.sheet").forEach((dlg) => {
   dlg.addEventListener("touchcancel", reset);
 });
 
+// ให้ Safari บน iPhone แสดงสถานะ :active ตอนกด
+document.addEventListener("touchstart", () => {}, { passive: true });
+
 boot();
