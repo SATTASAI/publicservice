@@ -381,3 +381,11 @@ input[type=date], input[type=time] { -webkit-appearance: none; appearance: none;
 .grab { background-clip: content-box; }
 /* ช่องวันที่ iOS: ชิดซ้ายเหมือนช่องอื่น */
 input[type=date]::-webkit-date-and-time-value { text-align: left; }
+/* เลื่อนลงเพื่อปิด: ฉากหลังจางตามนิ้ว (--bd 1→0) · ที่จับเป็นขีดมน */
+@property --bd { syntax: "<number>"; inherits: true; initial-value: 1; }
+dialog.sheet::backdrop { background: rgb(var(--shade, 11 63 61) / calc(.5 * var(--bd, 1))); }
+dialog.sheet.settle { transition: transform .3s cubic-bezier(.2, .9, .25, 1), --bd .3s ease; }
+dialog.sheet.dragging { transition: none; will-change: transform; }
+.grab { background: none; }
+.grab::before { content: ""; display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--line2); }
+dialog.sheet h2, .hist-head { touch-action: none; }

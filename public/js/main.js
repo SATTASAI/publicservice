@@ -712,37 +712,69 @@ $("mdf").addEventListener("submit", async (e) => {
   $("mdOk").disabled = false;
 });
 
-// ---------- เลื่อนลงเพื่อปิด bottom sheet (มือถือ) ----------
-// ลากปิดได้เฉพาะจาก "ที่จับ" ด้านบนเท่านั้น — เดิมลากจากตัว sheet ได้ ทำให้เลื่อนรายการ/แตะข้อพฤติกรรมแล้ว sheet ปิดเอง
-// และต้องลากเกิน 10px ก่อนจึงนับเป็นการลาก (ไม่กินการแตะ)
+// ---------- เลื่อนลงเพื่อปิด bottom sheet (มือถือ) — ทุกหน้าต่าง ----------
+// ลากได้จาก "ส่วนหัว" (ขีด/หัวข้อ) เสมอ · ลากจากเนื้อหาได้เมื่อหน้าต่างเลื่อนอยู่บนสุด
+// ยกเว้นในกล่องที่เลื่อนเองได้ (รายการข้อพฤติกรรม ฯลฯ) และช่องพิมพ์ — กันกดพลาด
+// ล็อกทิศ: ขยับแนวนอนก่อน = ไม่ใช่การลาก · ดึงขึ้นมีแรงต้านแล้วเด้งกลับ · ฉากหลังจางตามนิ้ว · สั่นเบา ๆ เมื่อถึงจุดปิด (Android)
+const SHEET_HEAD = ".grab, h2, .hist-head, #dWho";
+function innerScroller(el, dlg) {
+  for (let n = el; n && n !== dlg; n = n.parentElement) {
+    if (n.scrollHeight > n.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(n).overflowY)) return n;
+    if (n.scrollWidth > n.clientWidth + 1 && /(auto|scroll)/.test(getComputedStyle(n).overflowX)) return n;
+  }
+  return null;
+}
 document.querySelectorAll("dialog.sheet").forEach((dlg) => {
-  let y0 = 0, t0 = 0, dy = 0, track = false;
-  const reset = () => { track = false; dlg.classList.remove("dragging"); dlg.style.transform = ""; };
+  let y0 = 0, x0 = 0, dy = 0, off = 0, head = false, state = "", armed = false, lastY = 0, lastT = 0, vel = 0;
+  const setBd = (v) => dlg.style.setProperty("--bd", String(Math.max(0, Math.min(1, v))));
+  const clear = () => { dlg.classList.remove("dragging", "settle"); dlg.style.transform = ""; dlg.style.removeProperty("--bd"); };
+  const rubber = (x) => -Math.min(48, 48 * (1 - 1 / (x / 120 + 1)));
+  dlg.addEventListener("close", clear);
   dlg.addEventListener("touchstart", (e) => {
-    track = false;
-    if (innerWidth >= 900 || e.touches.length > 1 || !e.target.closest(".grab")) return;
-    y0 = e.touches[0].clientY; t0 = Date.now(); dy = 0; track = true;
-    dlg.classList.remove("settle");
+    state = "";
+    if (innerWidth >= 900 || e.touches.length > 1 || dlg.classList.contains("settle")) return;
+    const t = e.target;
+    head = !!t.closest(SHEET_HEAD);
+    if (!head) {
+      if (t.closest("input, select, textarea, [contenteditable]") || dlg.scrollTop > 0 || innerScroller(t, dlg)) return;
+    }
+    x0 = e.touches[0].clientX; y0 = lastY = e.touches[0].clientY; lastT = e.timeStamp; dy = off = vel = 0; armed = false;
+    state = "wait";
   }, { passive: true });
   dlg.addEventListener("touchmove", (e) => {
-    if (!track) return;
-    dy = e.touches[0].clientY - y0;
-    if (!dlg.classList.contains("dragging")) { if (dy < 10) return; dlg.classList.add("dragging"); }
+    if (!state || state === "no") return;
+    const y = e.touches[0].clientY, x = e.touches[0].clientX;
+    dy = y - y0;
+    if (state === "wait") {
+      const ax = Math.abs(x - x0), ay = Math.abs(dy);
+      if (ax < 8 && ay < 8) { if (dy > 3 && ax < dy && e.cancelable) e.preventDefault(); return; } // กัน iOS เริ่มเด้ง/เลื่อนก่อนตัดสินใจ
+      if (ax > ay || (dy < 0 && !head) || (!head && dlg.scrollTop > 0)) { state = "no"; return; }
+      state = "drag"; y0 = y; dy = 0; dlg.classList.add("dragging");
+    }
     e.preventDefault();
-    dlg.style.transform = `translateY(${Math.max(0, dy)}px)`;
+    const dt = Math.max(1, e.timeStamp - lastT);
+    vel = 0.8 * ((y - lastY) / dt) + 0.2 * vel; lastY = y; lastT = e.timeStamp;
+    off = dy >= 0 ? dy : rubber(-dy);
+    dlg.style.transform = `translateY(${off}px)`;
+    setBd(1 - Math.max(0, off) / Math.max(200, dlg.offsetHeight));
+    const at = off > Math.min(160, dlg.offsetHeight * 0.3);
+    if (at && !armed) { armed = true; navigator.vibrate?.(8); } else if (!at) armed = false;
   }, { passive: false });
-  dlg.addEventListener("touchend", () => {
-    if (!track) return;
-    track = false;
-    if (!dlg.classList.contains("dragging")) return;
+  const end = () => {
+    const was = state; state = "";
+    if (was !== "drag") return;
     dlg.classList.remove("dragging"); dlg.classList.add("settle");
-    const fast = dy / Math.max(1, Date.now() - t0) > 0.5;
-    if (dy > 110 || (fast && dy > 30)) {
-      dlg.style.transform = "translateY(100%)";
-      setTimeout(() => { dlg.close(); dlg.classList.remove("settle"); dlg.style.transform = ""; }, 260);
-    } else { dlg.style.transform = ""; setTimeout(() => dlg.classList.remove("settle"), 300); }
-  });
-  dlg.addEventListener("touchcancel", reset);
+    const close = off > Math.min(160, dlg.offsetHeight * 0.3) || (vel > 0.55 && off > 24);
+    if (close) {
+      dlg.style.transform = "translateY(105%)"; setBd(0);
+      setTimeout(() => { dlg.close(); clear(); }, 260);
+    } else {
+      dlg.style.transform = ""; setBd(1);
+      setTimeout(() => { if (state !== "drag") clear(); }, 320);
+    }
+  };
+  dlg.addEventListener("touchend", end);
+  dlg.addEventListener("touchcancel", end);
 });
 
 // ให้ Safari บน iPhone แสดงสถานะ :active ตอนกด
