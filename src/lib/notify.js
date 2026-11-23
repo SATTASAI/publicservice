@@ -43,3 +43,21 @@ export async function disciplineIds(env, exceptId) {
   ).bind(Number(exceptId) || 0, ...ADMIN_ROLES).all();
   return results.map((r) => r.id);
 }
+
+// ครูประจำชั้นของห้อง (gr_homerooms ของ students-report — อ่านอย่างเดียว)
+export async function homeroomIds(env, yearId, grade, room, exceptId) {
+  const { results } = await env.DB.prepare(
+    "SELECT user_id FROM gr_homerooms WHERE academic_year_id = ? AND grade_level = ? AND classroom = ? AND user_id <> ?"
+  ).bind(yearId, grade, room, Number(exceptId) || 0).all().catch(() => ({ results: [] }));
+  return results.map((r) => r.user_id);
+}
+
+// ข้อความแจ้งตัดคะแนน/ตักเตือน (บันทึกหลายคนพร้อมกัน = 1 ข้อความ)
+const names3 = (a) => `${a.slice(0, 3).join(", ")}${a.length > 3 ? ` และอีก ${a.length - 3} คน` : ""}`;
+export function recordMessage({ grade, room, amount, reason, by, deducted = [], warned = [] }) {
+  const kind = deducted.length && warned.length ? "ตัดคะแนน/ตักเตือน" : deducted.length ? "ตัดคะแนน" : "ตักเตือน";
+  const parts = [];
+  if (deducted.length) parts.push(`ตัด −${amount}: ${names3(deducted)}`);
+  if (warned.length) parts.push(`ตักเตือน: ${names3(warned)}`);
+  return { title: `${kind} ${grade}/${room}`, body: `${parts.join(" · ")} · ${reason} · โดย ${by || ""}` };
+}

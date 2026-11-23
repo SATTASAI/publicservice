@@ -6,5 +6,8 @@
   "description": "ระบบคะแนนพฤติกรรมนักเรียน (กิจกรรมเพื่อสังคมและสาธารณประโยชน์) โรงเรียนบ้านป่าเด็ง",
   "dependencies": {
     "@simplewebauthn/server": "13.2.2"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
   }
 }
