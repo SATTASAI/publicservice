@@ -139,6 +139,60 @@ function renderToday() {
     : `<div class="empty">วันนี้ยังไม่มีการหัก ตักเตือน หรือเพิ่มคะแนน</div>`;
 }
 $("oToday").onclick = (e) => { const b = e.target.closest(".tf"); if (!b) return; openHist({ id: Number(b.dataset.id), grade: b.dataset.g, room: b.dataset.r }); };
+// หักคะแนนตามข้อพฤติกรรม: ค้นหาข้อ → เลือกนักเรียนทั้งโรงเรียน (หลายคน/หลายห้อง) → หน้าต่างตัดคะแนนเดิม (ล็อกข้อไว้)
+function renderOb() {
+  const q = $("obq").value.trim(), box = $("obList");
+  box.hidden = !q;
+  if (!q) return;
+  const hit = S.me.presets_deduct.filter((x) => x.reason.includes(q) || (x.cat || "").includes(q));
+  box.innerHTML = hit.length ? hit.map((x) => `<button type="button" data-r="${esc(x.reason)}">${esc(x.reason)}<b class="bad">−${x.points}</b>${zoneTag(x.points)}<small class="cat">${esc(x.cat || "อื่น ๆ")}</small></button>`).join("")
+    : `<div class="muted">ไม่พบข้อพฤติกรรม</div>`;
+}
+$("obq").oninput = renderOb;
+$("obq").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } };
+$("obList").onclick = (e) => {
+  const b = e.target.closest("button[data-r]"); if (!b) return;
+  if (!isOpen()) return toast(closedMsg());
+  const pr = S.me.presets_deduct.find((x) => x.reason === b.dataset.r); if (!pr || !S.ov) return;
+  S.pk = { preset: pr, sel: new Map() };
+  $("pkWhat").innerHTML = `${esc(pr.reason)} <b class="bad">−${pr.points}</b> ${zoneTag(pr.points)}`;
+  $("pkq").value = ""; paintPk();
+  $("pkDlg").showModal();
+  if (document.activeElement === $("pkq")) $("pkq").blur();
+};
+const pkToday = (id) => (S.ov.today || []).filter((x) => x.student_id === id && x.type !== "add").map((x) => x.reason);
+function paintPk() {
+  const q = $("pkq").value.trim().replace(/\s+/g, " "), sel = S.pk.sel, r = S.pk.preset.reason;
+  const roomQ = q.match(/^(?:ป\.?\s*)?(\d)\s*\/\s*(\d+)$/);
+  const list = !q ? [] : S.ov.students.filter((s) => roomQ ? s.grade.replace(/\D/g, "") === roomQ[1] && String(s.room) === roomQ[2]
+    : s.name.includes(q) || String(s.code).includes(q) || `${s.grade}/${s.room}`.includes(q)).slice(0, 80);
+  $("pkSel").innerHTML = sel.size ? [...sel.values()].map((s) => `<button type="button" data-id="${s.id}">${esc(s.name)} <span class="tag room">${esc(s.grade)}/${esc(s.room)}</span> ✕</button>`).join("") : "";
+  $("pkList").innerHTML = !q ? `<div class="muted pk-hint">พิมพ์ชื่อ เลขประจำตัว หรือห้อง (เช่น ป.4/2) แล้วแตะเพื่อเลือก · เลือกได้หลายคนต่างห้องกัน</div>`
+    : list.length ? list.map((s) => { const on = sel.has(s.id), done = pkToday(s.id).includes(r);
+      return `<button type="button" class="pk-row ${on ? "on" : ""}" data-id="${s.id}" ${done ? "disabled" : ""}><span class="chk">${on ? "✓" : ""}</span>
+        <span class="tx"><b>${esc(s.name)}</b><small><span class="tag room">${esc(s.grade)}/${esc(s.room)}</span> ${esc(s.code)} · ${s.score} คะแนน${done ? " · บันทึกเรื่องนี้วันนี้แล้ว" : ""}</small></span></button>`; }).join("")
+    : `<div class="muted pk-hint">ไม่พบนักเรียน</div>`;
+  $("pkOk").disabled = !sel.size;
+  $("pkOk").textContent = sel.size ? `ต่อไป (${sel.size} คน)` : "ต่อไป";
+}
+$("pkq").oninput = paintPk;
+$("pkq").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } };
+$("pkList").onclick = (e) => {
+  const b = e.target.closest(".pk-row"); if (!b || b.disabled) return;
+  const id = Number(b.dataset.id), st = S.ov.students.find((s) => s.id === id);
+  S.pk.sel.has(id) ? S.pk.sel.delete(id) : S.pk.sel.set(id, st);
+  paintPk();
+};
+$("pkSel").onclick = (e) => { const b = e.target.closest("button[data-id]"); if (!b) return; S.pk.sel.delete(Number(b.dataset.id)); paintPk(); };
+$("pkCancel").onclick = () => $("pkDlg").close();
+$("pkOk").onclick = () => {
+  const st = [...S.pk.sel.values()]; if (!st.length) return;
+  const groups = [];
+  for (const s of st) { let g = groups.find((x) => x.grade === s.grade && x.room === s.room); if (!g) groups.push(g = { grade: s.grade, room: s.room, ids: [] }); g.ids.push(s.id); }
+  $("pkDlg").close();
+  openAction("deduct", { ids: st.map((s) => s.id), names: st.map((s) => s.name), grade: groups[0].grade, room: groups[0].room,
+    groups, today: st.map((s) => pkToday(s.id)), lockReason: S.pk.preset.reason });
+};
 $("oRooms").onclick = (e) => { const b = e.target.closest(".rm"); if (!b) return; setRoom(b.dataset.g, b.dataset.r); go("room"); };
 $("oq").oninput = renderOSearch;
 function renderOSearch() {
@@ -242,7 +296,8 @@ function openAction(kind, target) {
   const disc = S.me.user.is_discipline;
   $("dTitle").textContent = kind === "deduct" ? "ตัดคะแนนพฤติกรรม" : disc ? "บันทึกความดี + เพิ่มคะแนน" : "บันทึกความดี (ให้ฝ่ายปกครองอนุมัติ)";
   $("dTitle").className = kind === "deduct" ? "bad" : "good";
-  $("dWho").textContent = `${target.grade}/${target.room} · ` + (names.length > 3 ? `${names.slice(0, 3).join(", ")} และอีก ${names.length - 3} คน` : names.join(", "));
+  const where = target.groups?.length > 1 ? `${target.groups.length} ห้อง` : `${target.grade}/${target.room}`;
+  $("dWho").textContent = `${where} · ` + (names.length > 3 ? `${names.slice(0, 3).join(", ")} และอีก ${names.length - 3} คน` : names.join(", "));
   const wn = S.me.warn_n;
   $("dWarn").hidden = kind !== "deduct" || !wn;
   $("dWarn").textContent = `โซนเล็กน้อย: เรื่องเดียวกันต้องตักเตือนครบ ${wn} ครั้งในภาคเรียนก่อน จึงตัดคะแนนได้ (ยังไม่ครบ ระบบบันทึกเป็น "ตักเตือน") · โซนปานกลางขึ้นไป (หัก ${S.me.zones.mid} ขึ้นไป) เลือกเองว่าจะตักเตือนหรือตัดคะแนนเลย`;
@@ -258,6 +313,10 @@ function openAction(kind, target) {
   $("dMerit").hidden = kind !== "add";
   $("dMerit").textContent = disc ? "ครูฝ่ายปกครองบันทึก = เพิ่มคะแนนทันทีตามประเภทความดี · ซิงค์ไปบันทึกความดีในระบบบริหารโรงเรียน"
     : "ยังไม่เพิ่มคะแนนจนกว่าครูฝ่ายปกครองอนุมัติ (คะแนนตามประเภทความดี) · ซิงค์ไปบันทึกความดีในระบบบริหารโรงเรียน";
+  // เลือกจากข้อพฤติกรรม (หน้าภาพรวม): ล็อกข้อไว้ ไม่ต้องเลือกซ้ำ
+  const lockR = kind === "deduct" ? target.lockReason || "" : "";
+  if (lockR) { $("pPick").hidden = true; $("dReason").value = lockR; }
+  $("dPresets").hidden = !!lockR; $("dReason").readOnly = !!lockR;
   paintPresetBtns(); $("dPresets").scrollTop = 0; $("dAmount").value = "5"; lockAmount(); paintZone(); $("dDate").value = S.me.today; $("dDate").max = S.me.today; $("derr").hidden = true;
   S.action.refer = false; $("dNote").value = "";
   paintZone();
@@ -347,15 +406,23 @@ $("df").addEventListener("submit", async (e) => {
   }
   if (!$("dModeBox").hidden && !a.mode) { $("derr").textContent = "เลือก ตักเตือน หรือ ตัดคะแนนเลย"; $("derr").hidden = false; return; }
   $("dOk").disabled = true;
+  const res = { referred: 0, saved: 0, warned: 0, skipped: [], auto: false };
+  let done = 0;
   try {
-    const res = await api("/api/records", { method: "POST", body: { year: S.year, term: S.term, grade: a.grade, room: a.room,
-      kind: a.kind, amount: Number($("dAmount").value), reason: $("dReason").value, mode: a.mode || undefined, incident_date: $("dDate").value, student_ids: a.ids,
-      refer: undefined, note: $("dNote").value || undefined } });
+    for (const g of a.groups || [{ grade: a.grade, room: a.room, ids: a.ids }]) {
+      const r = await api("/api/records", { method: "POST", body: { year: S.year, term: S.term, grade: g.grade, room: g.room,
+        kind: a.kind, amount: Number($("dAmount").value), reason: $("dReason").value, mode: a.mode || undefined, incident_date: $("dDate").value, student_ids: g.ids,
+        refer: undefined, note: $("dNote").value || undefined } });
+      res.referred += r.referred || 0; res.saved += r.saved || 0; res.warned += r.warned || 0; res.skipped.push(...(r.skipped || [])); res.auto ||= !!r.auto; done++;
+    }
     const msg = [res.referred ? `ส่งต่อฝ่ายปกครอง ${res.referred} คน${res.auto ? " (อัตโนมัติ)" : ""}` : "",res.saved ? `${a.kind === "deduct" ? "ตัดคะแนน" : "บันทึกแล้ว"} ${res.saved} คน` : "", res.warned ? `ตักเตือน ${res.warned} คน` : "",
       res.skipped?.length ? `ข้าม ${res.skipped.length} คนที่บันทึกเรื่องนี้วันนี้แล้ว` : ""].filter(Boolean).join(" · ");
     $("dlg").close(); toast(msg);
     S.sel.clear(); await refresh();
-  } catch (ex) { $("derr").textContent = ex.message; $("derr").hidden = false; }
+  } catch (ex) {
+    $("derr").textContent = done ? `${ex.message} (บันทึกแล้ว ${done} จาก ${a.groups.length} ห้อง — ห้องที่เหลือยังไม่บันทึก)` : ex.message; $("derr").hidden = false;
+    if (done) { a.groups = a.groups.slice(done); refresh(); }
+  }
   $("dOk").disabled = false;
 });
 async function refresh() {
