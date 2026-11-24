@@ -389,3 +389,21 @@ dialog.sheet.dragging { transition: none; will-change: transform; }
 .grab { background: none; }
 .grab::before { content: ""; display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--line2); }
 dialog.sheet h2, .hist-head { touch-action: none; }
+/* ภาพรวม: หักคะแนนตามข้อพฤติกรรม */
+.ob-list { background: var(--prisoft); border: 1.5px solid var(--pri2); border-radius: var(--r); padding: .6rem; margin: .5rem 0 .4rem; max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; }
+.ob-list button { background: #fff; padding: .6rem .75rem; }
+.ob-list button:active { background: var(--pri); color: #fff; }
+#pkWhat { font-weight: 600; color: var(--ink); }
+.pk-sel { display: flex; flex-wrap: wrap; gap: .35rem; margin: .5rem 0; }
+.pk-sel:empty { display: none; }
+.pk-sel button { border: 0; background: var(--pri); color: #fff; border-radius: 999px; padding: .3rem .7rem; font: inherit; font-size: .85rem; font-weight: 600; max-width: 100%; overflow-wrap: anywhere; }
+.pk-sel .tag.room { background: rgba(255,255,255,.25); color: #fff; }
+.pk-list { background: var(--prisoft); border: 1.5px solid var(--pri2); border-radius: var(--r); padding: .3rem .6rem; max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
+.pk-row { display: flex; align-items: center; gap: .7rem; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); padding: .65rem .2rem; font: inherit; color: inherit; cursor: pointer; }
+.pk-row:last-child { border-bottom: 0; }
+.pk-row:active { background: #fff; }
+.pk-row .chk { flex: none; width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--line2); background: #fff; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: .85rem; }
+.pk-row.on .chk { background: var(--pri); border-color: var(--pri); }
+.pk-row .tx { flex: 1; min-width: 0; } .pk-row .tx b { display: block; font-weight: 600; } .pk-row .tx small { color: var(--muted); font-size: .78rem; }
+.pk-row:disabled { opacity: .5; cursor: not-allowed; }
+.pk-hint { padding: .8rem .2rem; }
